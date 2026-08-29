@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f7f8fa;
+  --surface: #ffffff;
+  --foreground: #14181f;
+  --muted: #5b6472;
+  --border: #dfe3e9;
+  --accent: #1a6b5a;
+  --accent-soft: #e6f2ef;
+  /* Tailwind's red-500 sits at 3,81:1 on white — below AA. These are picked
+     per theme so error text clears 4,5:1 in both. */
+  --error: #b3221b;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-error: var(--error);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0d1117;
+    --surface: #151b23;
+    --foreground: #e6e9ee;
+    --muted: #9aa4b2;
+    --border: #262d38;
+    --accent: #4fd1b0;
+    --accent-soft: #16302a;
+    --error: #ff9b93;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  /* German compounds — "Beitragsbemessungsgrenzen", "Sozialabgaben-Rechner" —
+     have no break opportunity and widen the page once text is enlarged. The
+     document is German throughout and <html lang="de"> is set, so let the
+     browser hyphenate everywhere rather than patching one element at a time. */
+  hyphens: auto;
+}
