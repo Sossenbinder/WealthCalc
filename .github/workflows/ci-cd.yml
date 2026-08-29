@@ -22,6 +22,11 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci
+      # LayoutProps und Verwandte erzeugt Next erst beim Bauen. Ohne diesen
+      # Schritt schlägt tsc auf einem frischen Checkout fehl und besteht nur
+      # dort, wo noch ein .next aus einem früheren Lauf liegt.
+      - name: Routentypen erzeugen
+        run: npx next typegen
       - name: Typecheck
         run: npm run typecheck
       - name: Test
