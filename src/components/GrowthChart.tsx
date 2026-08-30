@@ -45,14 +45,27 @@ export default function GrowthChart({ years }: GrowthChartProps) {
     // role="application" region in the tab order, where a screen reader finds
     // nothing but run-together axis digits. The table is the accessible form
     // of this data.
-    <div className="h-72 w-full" aria-hidden="true">
+    <div className="h-72 w-full sm:h-80" aria-hidden="true">
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart
           data={data}
           margin={{ top: 8, right: 8, bottom: 4, left: 4 }}
           accessibilityLayer={false}
         >
-          <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+          {/* Filled bands rather than flat colour: the interest band is the
+              thing being read, and a gradient keeps it legible where it is thin
+              in the early years without darkening the whole area. */}
+          <defs>
+            <linearGradient id="wc-paid-in" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--muted)" stopOpacity={0.32} />
+              <stop offset="100%" stopColor="var(--muted)" stopOpacity={0.12} />
+            </linearGradient>
+            <linearGradient id="wc-interest" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.7} />
+              <stop offset="100%" stopColor="var(--accent)" stopOpacity={0.25} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid stroke="var(--border)" strokeDasharray="4 4" vertical={false} />
           <XAxis
             dataKey="year"
             tick={{ fill: "var(--muted)", fontSize: 12 }}
@@ -78,17 +91,21 @@ export default function GrowthChart({ years }: GrowthChartProps) {
               name,
             ]}
             labelFormatter={(year) => `Jahr ${year}`}
+            cursor={{ stroke: "var(--border-strong)", strokeWidth: 1 }}
             contentStyle={{
               background: "var(--surface)",
               border: "1px solid var(--border)",
-              borderRadius: "0.5rem",
+              borderRadius: "0.75rem",
+              boxShadow: "var(--shadow-md)",
+              padding: "0.5rem 0.75rem",
               color: "var(--foreground)",
             }}
             itemStyle={{ color: "var(--foreground)" }}
           />
           <Legend
-            wrapperStyle={{ fontSize: 12, color: "var(--muted)" }}
-            iconType="square"
+            wrapperStyle={{ fontSize: 12, color: "var(--muted)", paddingTop: 8 }}
+            iconType="circle"
+            iconSize={9}
           />
           <Area
             type="monotone"
@@ -96,8 +113,8 @@ export default function GrowthChart({ years }: GrowthChartProps) {
             name="Eingezahlt"
             stackId="balance"
             stroke="var(--muted)"
-            fill="var(--muted)"
-            fillOpacity={0.25}
+            strokeWidth={1.5}
+            fill="url(#wc-paid-in)"
             isAnimationActive={false}
           />
           <Area
@@ -106,8 +123,8 @@ export default function GrowthChart({ years }: GrowthChartProps) {
             name="Zinsertrag"
             stackId="balance"
             stroke="var(--accent)"
-            fill="var(--accent)"
-            fillOpacity={0.55}
+            strokeWidth={2}
+            fill="url(#wc-interest)"
             isAnimationActive={false}
           />
         </AreaChart>

@@ -10,6 +10,8 @@ export type CategoryId = "geldanlage" | "steuern" | "einkommen" | "kredit";
 export interface Category {
   id: CategoryId;
   title: string;
+  /** Short label for navigation, where the full title does not fit. */
+  navTitle: string;
   description: string;
 }
 
@@ -42,24 +44,28 @@ export const categories: Category[] = [
   {
     id: "geldanlage",
     title: "Geldanlage",
+    navTitle: "Geldanlage",
     description:
       "Vermögen aufbauen, wieder entnehmen, Rendite und Kaufkraft nachrechnen.",
   },
   {
     id: "steuern",
     title: "Steuern auf Vermögen",
+    navTitle: "Steuern",
     description:
       "Kapitalerträge, Fondsbesteuerung sowie Erbschaft und Schenkung.",
   },
   {
     id: "einkommen",
     title: "Einkommen",
+    navTitle: "Einkommen",
     description:
       "Was vom Verdienst bleibt — Steuern und Sozialabgaben, angestellt wie selbstständig.",
   },
   {
     id: "kredit",
     title: "Immobilien und Kredit",
+    navTitle: "Immobilien",
     description:
       "Finanzieren, kaufen oder mieten, vermieten und leasen.",
   },

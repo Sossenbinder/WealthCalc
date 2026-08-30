@@ -130,9 +130,9 @@ export function ImmobilienBudgetRechner() {
   const r = result && result !== TILGT_NIE ? result : null;
 
   return (
-    <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[20rem_1fr] lg:items-start">
+    <div className="calc-grid">
       <form
-        className="order-2 flex flex-col gap-4 rounded-xl border border-border bg-surface p-5 lg:col-start-1 lg:row-start-1 lg:row-span-2"
+        className="card calc-form order-2 flex flex-col gap-4 p-5"
         onSubmit={(e) => e.preventDefault()}
       >
         <NumberField id="monatsrate" label="Monatliche Rate" suffix="€"
@@ -165,9 +165,10 @@ export function ImmobilienBudgetRechner() {
           error={parsed.range.maklerprovision ? "Zwischen 0 und 20 %." : "Bitte eine Zahl eingeben."} />
       </form>
 
-      <div className="order-1 rounded-xl border border-border bg-surface p-5 lg:col-start-2 lg:row-start-1">
-        <p className="text-sm text-muted">Die Immobilie darf kosten</p>
-        <p className="mt-1 overflow-x-auto text-4xl leading-tight font-semibold tabular-nums tracking-tight">
+      <div data-result-card
+        className="card order-1 p-5">
+        <p data-result-label className="text-sm font-medium text-muted">Die Immobilie darf kosten</p>
+        <p data-result-value className="mt-1.5 overflow-x-auto text-4xl sm:text-5xl leading-tight font-semibold tabular-nums tracking-tight">
           {incomplete ? "—" : result === TILGT_NIE ? "Nicht finanzierbar" : formatEuro(r!.maxKaufpreis)}
         </p>
         {incomplete ? (
@@ -215,9 +216,9 @@ export function ImmobilienBudgetRechner() {
       </div>
 
       {r === null ? null : (
-        <div className="order-3 overflow-x-auto rounded-xl border border-border bg-surface lg:col-start-2 lg:row-start-2">
-          <table className="w-full text-right text-sm tabular-nums">
-            <caption className="border-b border-border px-4 py-3 text-left font-medium">
+        <div className="card table-scroll order-3">
+          <table className="data-table w-full text-right text-sm tabular-nums">
+            <caption className="border-b border-border bg-surface px-4 py-3 text-left font-medium">
               Wie sich das Budget zusammensetzt
             </caption>
             <tbody>

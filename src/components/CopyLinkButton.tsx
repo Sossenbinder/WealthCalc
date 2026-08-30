@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
+import { CheckIcon, CopyIcon, PrintIcon } from "@/components/icons";
 
 interface CopyLinkButtonProps {
   /**
@@ -13,7 +14,7 @@ interface CopyLinkButtonProps {
 }
 
 /**
- * Copy the current scenario's link.
+ * Take the scenario with you: copy its link, or print the page.
  *
  * The scenario already lives in the query string; this exists because nothing
  * on the page said so. The URLs run past a hundred characters, which is not
@@ -42,14 +43,29 @@ export function CopyLinkButton({ scenarioKey, children }: CopyLinkButtonProps) {
   }, [scenarioKey]);
 
   return (
-    <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border pt-4 print:hidden">
+    <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-border pt-4 print:hidden">
       {children}
       <button
         type="button"
         onClick={copy}
-        className="rounded-lg border border-border px-3 py-2 text-sm font-medium hover:border-accent focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+        className="btn btn-secondary"
+        // The label stays put while the state changes: a button whose text
+        // swaps under the pointer is easy to click twice by accident.
       >
+        {state === "copied" ? (
+          <CheckIcon width={16} height={16} className="text-accent" />
+        ) : (
+          <CopyIcon width={16} height={16} />
+        )}
         Link kopieren
+      </button>
+      <button
+        type="button"
+        onClick={() => window.print()}
+        className="btn btn-secondary"
+      >
+        <PrintIcon width={16} height={16} />
+        Drucken
       </button>
       <span aria-live="polite" className="text-sm text-muted">
         {state === "copied"

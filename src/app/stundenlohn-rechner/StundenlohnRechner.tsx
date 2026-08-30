@@ -105,9 +105,9 @@ export function StundenlohnRechner() {
   );
 
   return (
-    <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[20rem_1fr] lg:items-start">
+    <div className="calc-grid">
       <form
-        className="order-2 flex flex-col gap-4 rounded-xl border border-border bg-surface p-5 lg:col-start-1 lg:row-start-1 lg:row-span-2"
+        className="card calc-form order-2 flex flex-col gap-4 p-5"
         onSubmit={(e) => e.preventDefault()}
       >
         <NumberField id="monatsgehalt" label="Monatsgehalt (brutto)" suffix="€"
@@ -134,9 +134,10 @@ export function StundenlohnRechner() {
           error={parsed.range.sonderzahlungen ? "Zwischen 0 und 6." : "Bitte eine Zahl eingeben."} />
       </form>
 
-      <div className="order-1 rounded-xl border border-border bg-surface p-5 lg:col-start-2 lg:row-start-1">
-        <p className="text-sm text-muted">Stundenlohn für gearbeitete Stunden</p>
-        <p className="mt-1 overflow-x-auto text-4xl leading-tight font-semibold tabular-nums tracking-tight">
+      <div data-result-card
+        className="card order-1 p-5">
+        <p data-result-label className="text-sm font-medium text-muted">Stundenlohn für gearbeitete Stunden</p>
+        <p data-result-value className="mt-1.5 overflow-x-auto text-4xl sm:text-5xl leading-tight font-semibold tabular-nums tracking-tight">
           {r === null ? "—" : formatEuro(r.stundenlohnEffektiv)}
         </p>
         {r === null ? (

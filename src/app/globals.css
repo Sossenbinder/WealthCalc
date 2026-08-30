@@ -1,42 +1,131 @@
 @import "tailwindcss";
 
+/* ---------------------------------------------------------------------------
+   Design tokens
+
+   Two themes, one set of names. Every colour a component reaches for is
+   semantic (`--surface`, `--muted`, `--accent`) rather than a hue, so the dark
+   theme is a token swap and never a second set of class names.
+
+   The theme resolves in three steps, in this order:
+     1. `:root`                       — light, the default
+     2. `prefers-color-scheme: dark`  — the operating system's choice
+     3. `[data-theme]` on <html>      — the reader's explicit choice, which the
+                                        header toggle sets and localStorage keeps
+   Step 3 has to win over step 2 in *both* directions, so the media query is
+   scoped away from an explicit light choice rather than merely coming first.
+--------------------------------------------------------------------------- */
+
 :root {
-  --background: #f7f8fa;
+  color-scheme: light;
+
+  --background: #f4f6f8;
   --surface: #ffffff;
-  --foreground: #14181f;
-  --muted: #5b6472;
-  --border: #dfe3e9;
-  --accent: #1a6b5a;
-  --accent-soft: #e6f2ef;
+  --surface-2: #f2f5f7;
+  --foreground: #101720;
+  --muted: #55616e;
+  --faint: #7b8896;
+  --border: #e1e6eb;
+  --border-strong: #c8d1da;
+
+  --accent: #0d6f5e;
+  --accent-hover: #0a5a4c;
+  --accent-on: #ffffff;
+  --accent-soft: #e2f1ed;
+  --accent-soft-strong: #c9e6df;
+
   /* Tailwind's red-500 sits at 3,81:1 on white — below AA. These are picked
      per theme so error text clears 4,5:1 in both. */
   --error: #b3221b;
+
+  --shadow-sm: 0 1px 2px rgb(16 23 32 / 0.05), 0 1px 3px rgb(16 23 32 / 0.04);
+  --shadow-md: 0 4px 12px rgb(16 23 32 / 0.07), 0 2px 4px rgb(16 23 32 / 0.04);
+  --shadow-lg: 0 18px 40px -12px rgb(16 23 32 / 0.18), 0 4px 12px rgb(16 23 32 / 0.06);
+
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+
+  --header-height: 3.75rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --background: #0a0e14;
+    --surface: #121a24;
+    --surface-2: #18222f;
+    --foreground: #e7ecf2;
+    --muted: #9aa7b6;
+    --faint: #78889a;
+    --border: #222d3b;
+    --border-strong: #354354;
+
+    --accent: #45d3ae;
+    --accent-hover: #6ae0c2;
+    --accent-on: #04211b;
+    --accent-soft: #10302a;
+    --accent-soft-strong: #17453b;
+
+    --error: #ff9b93;
+
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-md: 0 4px 12px rgb(0 0 0 / 0.45);
+    --shadow-lg: 0 18px 40px -12px rgb(0 0 0 / 0.65), 0 4px 12px rgb(0 0 0 / 0.4);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --background: #0a0e14;
+  --surface: #121a24;
+  --surface-2: #18222f;
+  --foreground: #e7ecf2;
+  --muted: #9aa7b6;
+  --faint: #78889a;
+  --border: #222d3b;
+  --border-strong: #354354;
+
+  --accent: #45d3ae;
+  --accent-hover: #6ae0c2;
+  --accent-on: #04211b;
+  --accent-soft: #10302a;
+  --accent-soft-strong: #17453b;
+
+  --error: #ff9b93;
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-md: 0 4px 12px rgb(0 0 0 / 0.45);
+  --shadow-lg: 0 18px 40px -12px rgb(0 0 0 / 0.65), 0 4px 12px rgb(0 0 0 / 0.4);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
+  --color-faint: var(--faint);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-accent: var(--accent);
   --color-accent-soft: var(--accent-soft);
+  --color-accent-on: var(--accent-on);
   --color-error: var(--error);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0d1117;
-    --surface: #151b23;
-    --foreground: #e6e9ee;
-    --muted: #9aa4b2;
-    --border: #262d38;
-    --accent: #4fd1b0;
-    --accent-soft: #16302a;
-    --error: #ff9b93;
-  }
+/* ---------------------------------------------------------------------------
+   Base
+--------------------------------------------------------------------------- */
+
+html {
+  /* The header is sticky, so an in-page anchor would otherwise land underneath
+     it. */
+  scroll-padding-top: calc(var(--header-height) + 1rem);
 }
 
 body {
@@ -47,4 +136,606 @@ body {
      document is German throughout and <html lang="de"> is set, so let the
      browser hyphenate everywhere rather than patching one element at a time. */
   hyphens: auto;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--accent-soft-strong);
+  color: var(--foreground);
+}
+
+/* One focus ring for everything reachable by keyboard. Components add colour
+   and offset, never the decision of whether a ring appears at all. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* The theme swap should read as a dip rather than a flash, but only for the
+   surfaces — animating every property makes typing feel laggy. */
+:root.theme-transition,
+:root.theme-transition *,
+:root.theme-transition *::before,
+:root.theme-transition *::after {
+  transition:
+    background-color 220ms ease,
+    border-color 220ms ease,
+    color 220ms ease,
+    fill 220ms ease !important;
+  transition-delay: 0ms !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Components
+
+   Written as real CSS rather than @apply so the tokens above stay the single
+   place a colour is decided, and so a restyle never means editing 21
+   calculators.
+--------------------------------------------------------------------------- */
+
+@layer components {
+  /* --- Surfaces ---------------------------------------------------------- */
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+  }
+
+  /* A card that is also a link: it lifts, and says so before the click. */
+  .card-link {
+    position: relative;
+    display: flex;
+    height: 100%;
+    flex-direction: column;
+    gap: 0.5rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    padding: 1.25rem;
+    transition:
+      transform 160ms ease,
+      box-shadow 160ms ease,
+      border-color 160ms ease;
+  }
+
+  .card-link:hover {
+    border-color: var(--accent);
+    box-shadow: var(--shadow-md);
+    transform: translateY(-2px);
+  }
+
+  .card-link:active {
+    transform: translateY(0);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .card-link:hover {
+      transform: none;
+    }
+  }
+
+  /* --- Buttons ----------------------------------------------------------- */
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: var(--radius-md);
+    border: 1px solid transparent;
+    padding: 0.5rem 0.875rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    line-height: 1.25rem;
+    white-space: nowrap;
+    cursor: pointer;
+    transition:
+      background-color 140ms ease,
+      border-color 140ms ease,
+      color 140ms ease,
+      box-shadow 140ms ease;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: var(--accent-on);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .btn-primary:hover {
+    background: var(--accent-hover);
+  }
+
+  .btn-secondary {
+    background: var(--surface);
+    border-color: var(--border-strong);
+    color: var(--foreground);
+  }
+
+  .btn-secondary:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--muted);
+  }
+
+  .btn-ghost:hover {
+    background: var(--surface-2);
+    color: var(--foreground);
+  }
+
+  .btn-icon {
+    padding: 0.5rem;
+    width: 2.25rem;
+    height: 2.25rem;
+  }
+
+  /* --- Form controls ----------------------------------------------------- */
+
+  /* The border, background and focus ring of a text field. Applied to the
+     input itself where the field is only an input, and to a wrapper where the
+     field also carries a unit — see `.field-shell`. */
+  .field-input {
+    width: 100%;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-strong);
+    background: var(--surface);
+    color: var(--foreground);
+    padding: 0.625rem 0.875rem;
+    font-size: 1rem;
+    line-height: 1.5rem;
+    outline: none;
+    transition:
+      border-color 140ms ease,
+      box-shadow 140ms ease,
+      background-color 140ms ease;
+  }
+
+  .field-input::placeholder {
+    color: var(--faint);
+  }
+
+  .field-input:hover:not(:focus) {
+    border-color: var(--accent);
+  }
+
+  .field-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 22%, transparent);
+  }
+
+  .field-input[aria-invalid="true"] {
+    border-color: var(--error);
+  }
+
+  .field-input[aria-invalid="true"]:focus {
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--error) 22%, transparent);
+  }
+
+  /* A field with a unit beside the value.
+     The unit used to be positioned over the input and the input padded by a
+     guess, which clipped "20" behind "Jahre". Here the unit is a flex sibling
+     that takes the width it needs and the input gets the rest, so no label is
+     too long to fit. */
+  .field-shell {
+    display: flex;
+    align-items: stretch;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .field-shell:hover:not(:focus-within) {
+    border-color: var(--accent);
+  }
+
+  .field-shell:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 22%, transparent);
+  }
+
+  .field-shell:has(> input[aria-invalid="true"]) {
+    border-color: var(--error);
+  }
+
+  .field-shell:has(> input[aria-invalid="true"]):focus-within {
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--error) 22%, transparent);
+  }
+
+  .field-shell > input {
+    width: 100%;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    padding: 0.625rem 0.875rem;
+    font-size: 1rem;
+    line-height: 1.5rem;
+    outline: none;
+  }
+
+  .field-suffix {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    border-left: 1px solid var(--border);
+    background: var(--surface-2);
+    padding: 0 0.75rem;
+    font-size: 0.875rem;
+    color: var(--muted);
+    user-select: none;
+  }
+
+  /* Native select, minus the platform chrome: the arrow is drawn as a
+     background so the control matches the text inputs beside it. */
+  .field-select {
+    appearance: none;
+    padding-right: 2.5rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2355616e' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 1rem;
+    cursor: pointer;
+  }
+
+  :root[data-theme="dark"] .field-select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%239aa7b6' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .field-select {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%239aa7b6' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");
+    }
+  }
+
+  /* A group of radios drawn as one control. The <input> stays in the DOM and
+     keeps the keyboard behaviour; only the label is painted. */
+  .segmented {
+    display: grid;
+    gap: 0.25rem;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 6rem), 1fr));
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 0.25rem;
+  }
+
+  .segmented-option {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: calc(var(--radius-md) - 0.2rem);
+    padding: 0.5rem 0.5rem;
+    text-align: center;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    color: var(--muted);
+    cursor: pointer;
+    transition:
+      background-color 140ms ease,
+      color 140ms ease,
+      box-shadow 140ms ease;
+  }
+
+  .segmented-option:hover {
+    color: var(--foreground);
+  }
+
+  .segmented-option[data-active="true"] {
+    background: var(--surface);
+    color: var(--foreground);
+    font-weight: 500;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .segmented-option:has(:focus-visible) {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  /* --- Calculator layout ------------------------------------------------- */
+
+  /* One column on a phone, inputs beside the answer from lg upwards.
+     The order of the children is set in the markup: the result comes first so
+     a small screen shows an answer before it shows a form. */
+  .calc-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  @media (min-width: 64rem) {
+    .calc-grid {
+      display: grid;
+      grid-template-columns: 22rem minmax(0, 1fr);
+      align-items: start;
+      column-gap: 1.5rem;
+      /* Row spacing is a margin rather than a gap on purpose — see below. */
+      row-gap: 0;
+    }
+
+    /* Everything that is not the input panel stacks down the right-hand
+       column, in whatever number a given calculator happens to have. */
+    .calc-grid > * {
+      grid-column: 2;
+    }
+
+    .calc-grid > * + * {
+      margin-top: 1.5rem;
+    }
+
+    /* The panel is the first child in the markup, so the rule above would put
+       a margin on the result card that starts the right-hand column. */
+    .calc-grid > .calc-form + * {
+      margin-top: 0;
+    }
+
+    /* Spanning far more rows than any calculator has is what gives the panel
+       somewhere to travel: `grid-row: 1 / -1` would mean the last line of the
+       *explicit* grid, and there is none here, so it silently collapses to a
+       single row and the panel's height inflates row 1 instead. The spare rows
+       cost nothing because they hold no content and row-gap is zero — which is
+       why the spacing above is a margin.
+
+       `align-self: start` stops the grid stretching the panel to fill the span,
+       which would leave sticky nothing to do. The result then stays beside the
+       inputs however far down a 40-row Tilgungsplan the reader has scrolled. */
+    .calc-form {
+      grid-column: 1;
+      grid-row: 1 / span 30;
+      margin-top: 0;
+      align-self: start;
+      position: sticky;
+      top: calc(var(--header-height) + 1rem);
+      max-height: calc(100vh - var(--header-height) - 2rem);
+      overflow-y: auto;
+    }
+  }
+
+  /* A year-by-year table runs to 40 rows and pushed everything after it off the
+     page. Capping it keeps the page scannable; the header row stays put while
+     the body scrolls, so a figure in the middle is still identifiable. */
+  .table-scroll {
+    max-height: 32rem;
+    overflow: auto;
+  }
+
+  /* --- Data ------------------------------------------------------------- */
+
+  .data-table tbody tr {
+    transition: background-color 120ms ease;
+  }
+
+  .data-table tbody tr:hover {
+    background: var(--surface-2);
+  }
+
+  .data-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--surface);
+    /* A border on a sticky cell scrolls away with the box model; an inset
+       shadow is painted and stays. */
+    box-shadow: inset 0 -1px 0 var(--border);
+  }
+
+  /* --- Chrome ----------------------------------------------------------- */
+
+  .site-header {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    background: color-mix(in oklab, var(--surface) 90%, transparent);
+    backdrop-filter: saturate(160%) blur(12px);
+    -webkit-backdrop-filter: saturate(160%) blur(12px);
+    border-bottom: 1px solid var(--border);
+  }
+
+  @supports not (backdrop-filter: blur(1px)) {
+    .site-header {
+      background: var(--surface);
+    }
+  }
+
+  .nav-link {
+    position: relative;
+    border-radius: var(--radius-sm);
+    padding: 0.375rem 0.625rem;
+    font-size: 0.875rem;
+    color: var(--muted);
+    transition:
+      color 140ms ease,
+      background-color 140ms ease;
+  }
+
+  .nav-link:hover {
+    color: var(--foreground);
+    background: var(--surface-2);
+  }
+
+  .nav-link[aria-current="page"] {
+    color: var(--accent);
+    background: var(--accent-soft);
+    font-weight: 500;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    padding: 0.125rem 0.625rem;
+    font-size: 0.75rem;
+    line-height: 1.25rem;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  .badge-accent {
+    border-color: color-mix(in oklab, var(--accent) 35%, transparent);
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+
+  /* A pill that filters. Distinct from `.badge`, which only labels. */
+  .chip {
+    border-radius: 999px;
+    border: 1px solid var(--border-strong);
+    background: var(--surface);
+    padding: 0.375rem 0.875rem;
+    font-size: 0.875rem;
+    color: var(--muted);
+    cursor: pointer;
+    white-space: nowrap;
+    transition:
+      background-color 140ms ease,
+      border-color 140ms ease,
+      color 140ms ease;
+  }
+
+  .chip:hover {
+    border-color: var(--accent);
+    color: var(--foreground);
+  }
+
+  .chip[aria-pressed="true"] {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: var(--accent-on);
+    font-weight: 500;
+  }
+
+  /* Keyboard hint, e.g. the ⌘K on the search button. */
+  .kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.375rem;
+    border-radius: 0.375rem;
+    border: 1px solid var(--border-strong);
+    background: var(--surface-2);
+    padding: 0.0625rem 0.3125rem;
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 0.6875rem;
+    line-height: 1.125rem;
+    color: var(--muted);
+  }
+
+  .skip-link {
+    position: absolute;
+    left: 0.75rem;
+    top: 0.5rem;
+    z-index: 60;
+    transform: translateY(-200%);
+    border-radius: var(--radius-md);
+    background: var(--accent);
+    color: var(--accent-on);
+    padding: 0.5rem 0.875rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: transform 160ms ease;
+  }
+
+  .skip-link:focus {
+    transform: translateY(0);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Motion
+
+   Small, one-shot, and never blocking: a result that changes should catch the
+   eye without the page appearing to reflow.
+--------------------------------------------------------------------------- */
+
+@keyframes wc-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes wc-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes wc-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.animate-fade-up {
+  animation: wc-fade-up 400ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-fade-in {
+  animation: wc-fade-in 240ms ease both;
+}
+
+.animate-scale-in {
+  animation: wc-scale-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* ---------------------------------------------------------------------------
+   Print
+
+   The calculators are printed — a Tilgungsplan is taken to a bank appointment.
+   Drop the chrome and the interactive affordances, keep the numbers.
+--------------------------------------------------------------------------- */
+
+@media print {
+  .card,
+  .card-link {
+    box-shadow: none !important;
+    break-inside: avoid;
+  }
+
+  /* Paper has no scrollbars: a capped table would print as a cropped one. */
+  .table-scroll,
+  .calc-form {
+    max-height: none !important;
+    overflow: visible !important;
+    position: static !important;
+  }
+
+  body {
+    background: #ffffff;
+  }
 }

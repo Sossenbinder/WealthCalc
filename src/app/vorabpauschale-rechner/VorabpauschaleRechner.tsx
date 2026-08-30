@@ -132,9 +132,9 @@ export function VorabpauschaleRechner() {
   const zins = basiszins(Number(jahr));
 
   return (
-    <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[20rem_1fr] lg:items-start">
+    <div className="calc-grid">
       <form
-        className="order-2 flex flex-col gap-4 rounded-xl border border-border bg-surface p-5 lg:col-start-1 lg:row-start-1 lg:row-span-2"
+        className="card calc-form order-2 flex flex-col gap-4 p-5"
         onSubmit={(e) => e.preventDefault()}
       >
         <SelectField
@@ -222,9 +222,10 @@ export function VorabpauschaleRechner() {
         />
       </form>
 
-      <div className="order-1 rounded-xl border border-border bg-surface p-5 lg:col-start-2 lg:row-start-1">
-        <p className="text-sm text-muted">Steuer auf die Vorabpauschale</p>
-        <p className="mt-1 overflow-x-auto text-4xl leading-tight font-semibold tabular-nums tracking-tight">
+      <div data-result-card
+        className="card order-1 p-5">
+        <p data-result-label className="text-sm font-medium text-muted">Steuer auf die Vorabpauschale</p>
+        <p data-result-value className="mt-1.5 overflow-x-auto text-4xl sm:text-5xl leading-tight font-semibold tabular-nums tracking-tight">
           {result === null ? "—" : formatEuro(result.steuer.total)}
         </p>
         {result === null ? (
@@ -268,9 +269,9 @@ export function VorabpauschaleRechner() {
       </div>
 
       {result === null ? null : (
-        <div className="order-3 overflow-x-auto rounded-xl border border-border bg-surface lg:col-start-2 lg:row-start-2">
-          <table className="w-full text-right text-sm tabular-nums">
-            <caption className="border-b border-border px-4 py-3 text-left font-medium">
+        <div className="card table-scroll order-3">
+          <table className="data-table w-full text-right text-sm tabular-nums">
+            <caption className="border-b border-border bg-surface px-4 py-3 text-left font-medium">
               Rechenweg nach § 18 InvStG
             </caption>
             <tbody>

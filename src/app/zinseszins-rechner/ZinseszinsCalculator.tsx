@@ -261,14 +261,14 @@ export function ZinseszinsCalculator() {
     result.finalBalance > 0 ? result.totalInterest / result.finalBalance : 0;
 
   return (
-    <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[20rem_1fr] lg:items-start">
+    <div className="calc-grid">
       <form
-        className="order-2 flex flex-col gap-4 rounded-xl border border-border bg-surface p-5 lg:col-start-1 lg:row-start-1 lg:row-span-2"
+        className="card calc-form order-2 flex flex-col gap-4 p-5"
         onSubmit={(event) => event.preventDefault()}
       >
         <fieldset className="flex flex-col gap-2">
           <legend className="text-sm font-medium">Ich möchte berechnen</legend>
-          <div className="grid gap-2 grid-cols-[repeat(auto-fit,minmax(min(100%,7rem),1fr))]">
+          <div className="segmented">
             {(
               [
                 ["endkapital", "Endkapital"],
@@ -278,11 +278,8 @@ export function ZinseszinsCalculator() {
             ).map(([value, label]) => (
               <label
                 key={value}
-                className={`flex-1 cursor-pointer rounded-lg border px-3 py-2 text-center text-sm has-[:focus-visible]:border-accent has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent/40 ${
-                  mode === value
-                    ? "border-accent bg-accent-soft font-medium"
-                    : "border-border"
-                }`}
+                data-active={mode === value}
+                className="segmented-option"
               >
                 <input
                   type="radio"
@@ -402,7 +399,7 @@ export function ZinseszinsCalculator() {
 
         <fieldset className="flex flex-col gap-2">
           <legend className="text-sm font-medium">Einzahlung</legend>
-          <div className="grid gap-2 grid-cols-[repeat(auto-fit,minmax(min(100%,7rem),1fr))]">
+          <div className="segmented">
             {(
               [
                 ["end", "Monatsende"],
@@ -411,11 +408,8 @@ export function ZinseszinsCalculator() {
             ).map(([value, label]) => (
               <label
                 key={value}
-                className={`flex-1 cursor-pointer rounded-lg border px-3 py-2 text-center text-sm has-[:focus-visible]:border-accent has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent/40 ${
-                  timing === value
-                    ? "border-accent bg-accent-soft font-medium"
-                    : "border-border"
-                }`}
+                data-active={timing === value}
+                className="segmented-option"
               >
                 <input
                   type="radio"
@@ -432,8 +426,9 @@ export function ZinseszinsCalculator() {
         </fieldset>
       </form>
 
-      <div className="order-1 rounded-xl border border-border bg-surface p-5 lg:col-start-2 lg:row-start-1">
-        <p className="text-sm text-muted">
+      <div data-result-card
+        className="card order-1 p-5">
+        <p data-result-label className="text-sm font-medium text-muted">
           {mode === "sparrate"
             ? "Benötigte monatliche Sparrate"
             : mode === "dauer"
@@ -444,7 +439,7 @@ export function ZinseszinsCalculator() {
                     parsed.scenario.years === 1 ? "Jahr" : "Jahren"
                   }`}
         </p>
-        <p
+        <p data-result-value
           // A currency amount has no break opportunity — digits cannot wrap and
           // the space before € is non-breaking — so at large text sizes it
           // widens the whole page. Shrinking it to fit would mean rendering the
@@ -452,7 +447,7 @@ export function ZinseszinsCalculator() {
           // text, so let it scroll inside its own box, as the table does.
           // leading-tight: text-4xl pins line-height below the glyph box, which
           // a scroll container would then clip.
-          className={`mt-1 overflow-x-auto text-4xl leading-tight font-semibold tabular-nums tracking-tight ${
+          className={`mt-1.5 overflow-x-auto text-4xl sm:text-5xl leading-tight font-semibold tabular-nums tracking-tight ${
             incomplete ? "text-muted" : ""
           }`}
         >
@@ -547,7 +542,7 @@ export function ZinseszinsCalculator() {
                 <button
                   type="button"
                   onClick={continueWithSolvedRate}
-                  className="rounded-lg border border-accent bg-accent-soft px-3 py-2 text-sm font-medium hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+                  className="btn btn-primary"
                 >
                   Mit dieser Rate weiterrechnen
                 </button>
@@ -555,7 +550,7 @@ export function ZinseszinsCalculator() {
                 <button
                   type="button"
                   onClick={continueWithSolvedYears}
-                  className="rounded-lg border border-accent bg-accent-soft px-3 py-2 text-sm font-medium hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+                  className="btn btn-primary"
                 >
                   Mit dieser Dauer weiterrechnen
                 </button>
@@ -565,16 +560,16 @@ export function ZinseszinsCalculator() {
       </div>
 
       {incomplete ? null : (
-      <div className="order-3 rounded-xl border border-border bg-surface p-5 lg:col-start-2 lg:row-start-2">
+      <div className="card order-3 p-5">
         <h2 className="mb-4 font-medium">Eingezahlt und Zinsertrag</h2>
         <GrowthChart years={result.years} />
       </div>
       )}
 
       {incomplete ? null : (
-      <div className="order-4 overflow-x-auto rounded-xl border border-border bg-surface lg:col-start-2 lg:row-start-3">
-        <table className="w-full min-w-xl text-right text-sm tabular-nums">
-          <caption className="border-b border-border px-4 py-3 text-left font-medium">
+      <div className="card table-scroll order-4">
+        <table className="data-table w-full min-w-xl text-right text-sm tabular-nums">
+          <caption className="border-b border-border bg-surface px-4 py-3 text-left font-medium">
             Entwicklung Jahr für Jahr
           </caption>
           <thead className="text-xs uppercase tracking-wide text-muted">

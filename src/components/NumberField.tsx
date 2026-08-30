@@ -28,14 +28,22 @@ export function NumberField({
   // marks the field as in error while explaining nothing — and a screen reader
   // then announces "invalid" followed by a sentence about what the field is for.
   const message = invalid ? (error ?? hint) : hint;
-  const describedBy = message ? `${id}-hint` : undefined;
+  // The unit is part of what the field expects, so it is described rather than
+  // decorative: "Anlagedauer, Jahre" reads as one instruction, where a silent
+  // suffix leaves a screen reader user guessing between years and months.
+  const describedBy =
+    [suffix ? `${id}-suffix` : null, message ? `${id}-hint` : null]
+      .filter(Boolean)
+      .join(" ") || undefined;
 
   return (
     <div className="flex flex-col gap-1.5">
       <label htmlFor={id} className="text-sm font-medium">
         {label}
       </label>
-      <div className="relative">
+      {/* With a unit, the border belongs to the wrapper so that the unit sits
+          inside the field rather than on top of the value. */}
+      <div className={suffix ? "field-input field-shell" : undefined}>
         <input
           id={id}
           value={value}
@@ -47,20 +55,20 @@ export function NumberField({
           autoComplete="off"
           aria-invalid={invalid}
           aria-describedby={describedBy}
-          className={`w-full rounded-lg border bg-surface px-3 py-2 text-right tabular-nums outline-none focus:border-accent focus:ring-2 focus:ring-accent/30 ${
-            invalid ? "border-error" : "border-border"
-          } ${suffix ? "pr-12" : ""}`}
+          className={`text-right tabular-nums ${suffix ? "" : "field-input"}`}
         />
         {suffix ? (
-          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted">
+          <span id={`${id}-suffix`} className="field-suffix">
             {suffix}
           </span>
         ) : null}
       </div>
       {message ? (
         <p
-          id={describedBy}
-          className={`text-xs ${invalid ? "text-error" : "text-muted"}`}
+          id={`${id}-hint`}
+          className={`text-xs leading-relaxed ${
+            invalid ? "text-error" : "text-muted"
+          }`}
         >
           {message}
         </p>
