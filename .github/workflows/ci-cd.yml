@@ -76,3 +76,65 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # Den frisch gebauten Tag ins Cluster-Repo schreiben.
+  #
+  # Ohne diesen Schritt passiert nach dem Push gar nichts: Das Chart zeigt auf
+  # `:latest`, ArgoCD synchronisiert aus Git, und ein neues Image ändert kein
+  # einziges Manifest. Argo sieht also keine Abweichung, legt keinen neuen Pod
+  # an — und `imagePullPolicy: Always` greift nur beim Anlegen eines Pods. Der
+  # laufende Pod behält das alte Image, unbegrenzt.
+  #
+  # Deshalb wird hier der unveränderliche sha-Tag in `values.yaml` eingetragen:
+  # das ist die Änderung, die Argo tatsächlich sehen kann.
+  bump-chart:
+    if: github.event_name != 'pull_request'
+    needs: build-push
+    runs-on: ubuntu-latest
+    # Zwei Pushes kurz hintereinander würden sich sonst gegenseitig überholen.
+    concurrency:
+      group: hkube-wealthcalc
+      cancel-in-progress: false
+    steps:
+      # Fehlt das Token, bleibt der Job grün und sagt es nur — sonst wäre main
+      # ab sofort rot, bis das Secret angelegt ist.
+      - name: Token prüfen
+        id: guard
+        env:
+          TOKEN: ${{ secrets.HKUBE_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::warning::HKUBE_TOKEN fehlt — Chart wird nicht aktualisiert, das Cluster bleibt auf dem alten Image."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.guard.outputs.skip != 'true'
+        with:
+          repository: Sossenbinder/HKube
+          token: ${{ secrets.HKUBE_TOKEN }}
+          ref: main
+
+      - name: Image-Tag setzen
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          # Entspricht `type=sha,format=long` oben.
+          TAG: sha-${{ github.sha }}
+        run: |
+          set -euo pipefail
+          werte=charts/wealthcalc/values.yaml
+          # Verankert auf die eine `tag:`-Zeile unter `image:`; die Datei hat
+          # keinen zweiten Schlüssel dieses Namens.
+          sed -i -E "s|^(  tag: ).*$|\1$TAG|" "$werte"
+          # Ein stilles Nichts-getan wäre schlimmer als ein Fehlschlag: dann
+          # liefe das Cluster weiter auf dem alten Image, ohne dass es auffällt.
+          grep -qx "  tag: $TAG" "$werte"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "Tag steht bereits auf $TAG."
+            exit 0
+          fi
+          git commit -am "wealthcalc: Image auf $TAG"
+          git pull --rebase
+          git push
