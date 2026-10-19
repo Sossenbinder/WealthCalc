@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     template: `%s | ${siteName}`,
   },
   description:
-    "Kostenlose Rechner für Geldanlage, Steuern, Einkommen und Immobilienfinanzierung. Alle Berechnungen laufen direkt im Browser — es werden keine Daten an einen Server gesendet.",
+    "Kostenlose Rechner für Geldanlage, Steuern, Einkommen und Immobilienfinanzierung. Alle Berechnungen laufen direkt im Browser — deine Eingaben verlassen nie dein Gerät.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -37,6 +37,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         {/* Runs before the first paint so a stored dark choice never flashes
             white. See themeInitScript. */}
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+        <script
+          defer
+          src="https://stats.dotschranz.net/script.js"
+          data-website-id="64061452-cd97-4df7-9f44-18a5f6a756d2"
+          data-domains="wealthcalc.dotschranz.net"
+          data-do-not-track="true"
+        />
       </head>
       <body className="font-sans min-h-full flex flex-col">
         <a href="#inhalt" className="skip-link">
@@ -99,7 +106,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             <p className="mx-auto max-w-6xl px-4 py-6 text-xs leading-relaxed text-muted">
               {siteName} liefert unverbindliche Berechnungen und ersetzt keine
               Steuer- oder Anlageberatung. Alle Eingaben bleiben in deinem
-              Browser — es werden keine Daten an einen Server gesendet.
+              Browser — sie werden nie an einen Server gesendet. Für eine
+              anonyme Besucherstatistik ohne Cookies nutzen wir ein selbst
+              gehostetes Umami, das Do Not Track respektiert.
             </p>
           </div>
         </footer>

@@ -1,7 +1,8 @@
 # WealthCalc
 
 Rechner für Geldanlage, Steuern und Kredit. Deutschsprachig, vollständig statisch,
-jede Berechnung läuft im Browser — kein Backend, keine Datenübertragung.
+jede Berechnung läuft im Browser — kein Backend, Eingaben verlassen nie das Gerät
+(nur anonyme Seitenaufrufe via selbst gehostetem Umami).
 
 Design: `../specs/outlines/wealthcalc-german-finance-portal.md`
 
