@@ -58,8 +58,36 @@ export interface MonteCarloJahr {
   nochKapital: number;
 }
 
+/**
+ * Every simulated path, kept so a single one can be looked at — not only the
+ * bands across all of them. Flat typed arrays rather than objects: at 10.000
+ * paths over 100 years that is a million values, and typed arrays cross from
+ * the worker without being copied.
+ */
+export interface MonteCarloPfade {
+  anzahl: number;
+  /** Years per path after year 0; the stride of the arrays below. */
+  jahre: number;
+  /** Nominal year-end capital, path-major: `salden[pfad * (jahre + 1) + jahr]`, year 0 = start. */
+  salden: Float64Array;
+  /** The fund's return in each year after costs: `jahresRenditen[pfad * jahre + jahr - 1]`. */
+  jahresRenditen: Float64Array;
+  /** Deepest fall of the fund's price from a previous high, 0..1. */
+  maxDrawdown: Float64Array;
+  /** Month (from the start) of the low point of that fall; -1 without one. */
+  drawdownTief: Int32Array;
+  /** Month into the Entnahmephase a path ran dry; -1 = never. */
+  erschoepft: Int32Array;
+  /**
+   * Path indices from worst to best outcome: capital at the end of the
+   * horizon, and among paths that ran dry, the earlier the worse.
+   */
+  rangfolge: Int32Array;
+}
+
 export interface MonteCarloResult {
   jahre: MonteCarloJahr[];
+  pfade: MonteCarloPfade;
   /** Capital at the end of the Ansparphase (nominal). */
   ansparEnde: {
     perzentile: Perzentile;
@@ -227,6 +255,17 @@ export function simuliereMonteCarlo(input: MonteCarloInput): MonteCarloResult {
   // Month (counted from the start of the Entnahmephase) a path ran dry; -1 = never.
   const erschoepft = new Int32Array(n).fill(-1);
 
+  // Per-path records for looking at a single path afterwards.
+  const stride = gesamtJahre + 1;
+  const salden = new Float64Array(n * stride);
+  const jahresRenditen = new Float64Array(n * gesamtJahre);
+  const maxDrawdown = new Float64Array(n);
+  const drawdownTief = new Int32Array(n).fill(-1);
+  // The fund's price, starting at 1, its running high, and this year's growth.
+  const kurs = new Float64Array(n).fill(1);
+  const hoch = new Float64Array(n).fill(1);
+  const jahresFaktor = new Float64Array(n);
+
   const jahre: MonteCarloJahr[] = [];
   let eingezahlt = input.startkapital;
   let sparrate = input.sparrate;
@@ -238,6 +277,7 @@ export function simuliereMonteCarlo(input: MonteCarloInput): MonteCarloResult {
   const snapshot = (jahr: number, phase: MonteCarloJahr["phase"]) => {
     let lebend = 0;
     for (let i = 0; i < n; i++) if (saldo[i] > 0) lebend++;
+    for (let i = 0; i < n; i++) salden[i * stride + jahr] = saldo[i];
     jahre.push({
       jahr,
       phase,
@@ -274,8 +314,10 @@ export function simuliereMonteCarlo(input: MonteCarloInput): MonteCarloResult {
   for (let jahr = 1; jahr <= gesamtJahre; jahr++) {
     const anspar = jahr <= ansparJahre;
     const entnahmeJahr = jahr - ansparJahre - 1; // 0-based within the phase
+    jahresFaktor.fill(1);
 
     for (let m = 0; m < 12; m++) {
+      const monat = (jahr - 1) * 12 + m + 1;
       // Drawn for every path every month, even an empty one, so a path's
       // randomness does not depend on what happened to the others.
       if (deterministisch) {
@@ -285,6 +327,21 @@ export function simuliereMonteCarlo(input: MonteCarloInput): MonteCarloResult {
         for (let i = 0; i < n; i++) zinsen[i] = Math.exp(mu + sigmaMonat * zinsen[i]) - 1;
       }
       for (let i = 0; i < n; i++) {
+        // The fund keeps moving whether or not this path still holds any of it.
+        const faktor = 1 + zinsen[i];
+        jahresFaktor[i] *= faktor;
+        const k = kurs[i] * faktor;
+        kurs[i] = k;
+        if (k > hoch[i]) {
+          hoch[i] = k;
+        } else {
+          const fall = 1 - k / hoch[i];
+          if (fall > maxDrawdown[i]) {
+            maxDrawdown[i] = fall;
+            drawdownTief[i] = monat;
+          }
+        }
+
         let s = saldo[i];
         if (s <= 0 && !anspar) continue;
         s += applyRate(s, zinsen[i]);
@@ -303,6 +360,9 @@ export function simuliereMonteCarlo(input: MonteCarloInput): MonteCarloResult {
       if (anspar) eingezahlt += sparrate;
     }
 
+    for (let i = 0; i < n; i++) {
+      jahresRenditen[i * gesamtJahre + jahr - 1] = jahresFaktor[i] - 1;
+    }
     snapshot(jahr, anspar ? "anspar" : "entnahme");
 
     if (anspar) {
@@ -329,7 +389,168 @@ export function simuliereMonteCarlo(input: MonteCarloInput): MonteCarloResult {
     };
   }
 
+  const leerAb = (i: number) => (erschoepft[i] === -1 ? Infinity : erschoepft[i]);
+  const rangfolge = new Int32Array(n);
+  for (let i = 0; i < n; i++) rangfolge[i] = i;
+  rangfolge.sort(
+    (a, b) => saldo[a] - saldo[b] || leerAb(a) - leerAb(b) || a - b,
+  );
+
   // Set at the end of the last Anspar year, or before the loop without one.
   if (ansparEnde === null) throw new Error("Ansparphase nicht abgeschlossen");
-  return { jahre, ansparEnde, entnahme: entnahmeErgebnis };
+  return {
+    jahre,
+    pfade: {
+      anzahl: n,
+      jahre: gesamtJahre,
+      salden,
+      jahresRenditen,
+      maxDrawdown,
+      drawdownTief,
+      erschoepft,
+      rangfolge,
+    },
+    ansparEnde,
+    entnahme: entnahmeErgebnis,
+  };
+}
+
+/** The path at percentile `p` (0..100) of the outcome ranking. */
+export function pfadAmPerzentil(pfade: MonteCarloPfade, p: number): number {
+  const rang = Math.round((Math.min(Math.max(p, 0), 100) / 100) * (pfade.anzahl - 1));
+  return pfade.rangfolge[rang];
+}
+
+export interface PfadDetail {
+  pfad: number;
+  /** Nominal year-end capital, index 0 = today. */
+  salden: Money[];
+  /** The fund's return per year, index 0 = year 1. */
+  renditen: number[];
+  /** Geometric average of those returns. */
+  renditeProJahr: number;
+  besteJahr: { jahr: number; rendite: number } | null;
+  schlechtesteJahr: { jahr: number; rendite: number } | null;
+  maxDrawdown: number;
+  /** Year in which the deepest fall bottomed out; null without one. */
+  drawdownTiefJahr: number | null;
+  /** Years into the Entnahmephase until empty; null if it never ran dry. */
+  leerNachJahren: number | null;
+}
+
+/** Everything about one path, unpacked from the flat arrays. */
+export function pfadDetail(pfade: MonteCarloPfade, pfad: number): PfadDetail {
+  const stride = pfade.jahre + 1;
+  const salden = Array.from(pfade.salden.subarray(pfad * stride, (pfad + 1) * stride));
+  const renditen = Array.from(
+    pfade.jahresRenditen.subarray(pfad * pfade.jahre, (pfad + 1) * pfade.jahre),
+  );
+
+  let beste: PfadDetail["besteJahr"] = null;
+  let schlechteste: PfadDetail["schlechtesteJahr"] = null;
+  let produkt = 1;
+  renditen.forEach((rendite, index) => {
+    produkt *= 1 + rendite;
+    if (beste === null || rendite > beste.rendite) beste = { jahr: index + 1, rendite };
+    if (schlechteste === null || rendite < schlechteste.rendite) {
+      schlechteste = { jahr: index + 1, rendite };
+    }
+  });
+
+  const tief = pfade.drawdownTief[pfad];
+  const leer = pfade.erschoepft[pfad];
+  return {
+    pfad,
+    salden,
+    renditen,
+    renditeProJahr: renditen.length === 0 ? 0 : Math.pow(produkt, 1 / renditen.length) - 1,
+    besteJahr: beste,
+    schlechtesteJahr: schlechteste,
+    maxDrawdown: pfade.maxDrawdown[pfad],
+    drawdownTiefJahr: tief === -1 ? null : Math.ceil(tief / 12),
+    leerNachJahren: leer === -1 ? null : leer / 12,
+  };
+}
+
+export interface HistogrammKlasse {
+  /** Lower and upper edge in display units (euros after `teiler`). */
+  von: number;
+  bis: number;
+  anzahl: number;
+  /** Positions in `rangfolge` covered by this class, inclusive. */
+  rangVon: number;
+  rangBis: number;
+  /** The first and last class also hold everything beyond them. */
+  offenUnten: boolean;
+  offenOben: boolean;
+}
+
+export interface Histogramm {
+  klassen: HistogrammKlasse[];
+  /** Paths that ran dry; they precede every class in the ranking. */
+  leer: number;
+}
+
+/** 1, 2, 2.5 or 5 times a power of ten — widths a reader can add up. */
+function glatt(wert: number): number {
+  if (wert <= 0) return 1;
+  const potenz = Math.pow(10, Math.floor(Math.log10(wert)));
+  const rest = wert / potenz;
+  const stufe = rest <= 1 ? 1 : rest <= 2 ? 2 : rest <= 2.5 ? 2.5 : rest <= 5 ? 5 : 10;
+  return stufe * potenz;
+}
+
+/**
+ * Distribution of the capital at the end of the horizon, in classes of a round
+ * width. The outer half percent on either side is folded into the first and
+ * last class: the right tail of a lognormal runs on for a long way, and drawn
+ * to scale it would squash everything else into a few bars.
+ *
+ * `teiler` converts nominal cents into what is displayed — 100 for nominal
+ * euros, 100 × deflator for today's purchasing power — so the class edges are
+ * round in the unit the reader sees.
+ */
+export function histogramm(
+  pfade: MonteCarloPfade,
+  teiler: number,
+  zielKlassen = 30,
+): Histogramm {
+  const stride = pfade.jahre + 1;
+  const n = pfade.anzahl;
+  const wert = (rang: number) =>
+    pfade.salden[pfade.rangfolge[rang] * stride + pfade.jahre] / teiler;
+
+  let leer = 0;
+  while (leer < n && pfade.erschoepft[pfade.rangfolge[leer]] !== -1) leer++;
+  const rest = n - leer;
+  if (rest === 0) return { klassen: [], leer };
+
+  const quantilRang = (q: number) => leer + Math.round(q * (rest - 1));
+  const lo = wert(quantilRang(0.005));
+  const hi = wert(quantilRang(0.995));
+  const breite = glatt((hi - lo) / zielKlassen || Math.max(hi, 1) / zielKlassen);
+  const start = Math.floor(lo / breite) * breite;
+  const anzahlKlassen = Math.max(1, Math.ceil((hi - start) / breite + 1e-9));
+
+  const klassen: HistogrammKlasse[] = Array.from({ length: anzahlKlassen }, (_, k) => ({
+    von: start + k * breite,
+    bis: start + (k + 1) * breite,
+    anzahl: 0,
+    rangVon: -1,
+    rangBis: -1,
+    offenUnten: k === 0 && wert(leer) < start,
+    offenOben: k === anzahlKlassen - 1 && wert(n - 1) >= start + anzahlKlassen * breite,
+  }));
+
+  for (let rang = leer; rang < n; rang++) {
+    const k = Math.min(
+      Math.max(Math.floor((wert(rang) - start) / breite), 0),
+      anzahlKlassen - 1,
+    );
+    const klasse = klassen[k];
+    klasse.anzahl++;
+    if (klasse.rangVon === -1) klasse.rangVon = rang;
+    klasse.rangBis = rang;
+  }
+  return { klassen, leer };
 }

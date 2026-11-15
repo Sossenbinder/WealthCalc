@@ -16,7 +16,10 @@ import {
   parseMoney,
 } from "@/lib/engine/format";
 import {
+  histogramm,
   MAX_JAHRE_GESAMT,
+  pfadAmPerzentil,
+  pfadDetail,
   simuliereMonteCarlo,
   type MonteCarloInput,
   type MonteCarloResult,
@@ -29,11 +32,16 @@ import {
   useScenarioUrl,
 } from "@/lib/useScenarioUrl";
 import type { SimulationRequest, SimulationResponse } from "./simulation.worker";
+import { VerlaufDetail } from "./VerlaufDetail";
 
 // Recharts stays out of the prerendered HTML, as on the Zinseszinsrechner.
 const FanChart = dynamic(() => import("./FanChart"), {
   ssr: false,
   loading: () => <div className="h-72 w-full" aria-hidden />,
+});
+const Verteilung = dynamic(() => import("./Verteilung"), {
+  ssr: false,
+  loading: () => <div className="h-64 w-full" aria-hidden />,
 });
 
 const MAX_MONEY = 100_000_000_00;
@@ -174,6 +182,8 @@ export function MonteCarloRechner() {
   const [simulationen, setSimulationen] = useState<Simulationen>(DEFAULT_SIMULATIONEN);
   const [seed, setSeed] = useState(DEFAULT_SEED);
   const [ansicht, setAnsicht] = useState<Ansicht>("nominal");
+  // Which path the drill-down shows: 0 = worst outcome, 100 = best.
+  const [perzentil, setPerzentil] = useState(50);
   const set = (k: keyof Fields) => (v: string) => setFields((c) => ({ ...c, [k]: v }));
 
   const parsed = useMemo(() => {
@@ -258,6 +268,7 @@ export function MonteCarloRechner() {
       }
       setSeed(Math.round(readNumber(p, "seed", DEFAULT_SEED, 0, MAX_SEED)));
       if (p.get("ans") === "real") setAnsicht("real");
+      setPerzentil(readNumber(p, "p", 50, 0, 100));
     },
     () => {
       const p = new URLSearchParams();
@@ -275,10 +286,11 @@ export function MonteCarloRechner() {
       p.set("n", simulationen);
       p.set("seed", numberParam(seed));
       p.set("ans", ansicht);
+      p.set("p", numberParam(perzentil));
       return p;
     },
     !incomplete,
-    JSON.stringify([v, simulationen, seed, ansicht]),
+    JSON.stringify([v, simulationen, seed, ansicht, perzentil]),
   );
 
   const input: MonteCarloInput | null = useMemo(
@@ -303,6 +315,26 @@ export function MonteCarloRechner() {
   const entnahme = result?.entnahme ?? null;
   const gesamtJahre = result ? result.jahre[result.jahre.length - 1].jahr : 0;
   const letztes = result ? result.jahre[result.jahre.length - 1] : null;
+
+  const pfade = result?.pfade ?? null;
+  const detail = useMemo(
+    () => (pfade ? pfadDetail(pfade, pfadAmPerzentil(pfade, perzentil)) : null),
+    [pfade, perzentil],
+  );
+  const ausgewaehlterRang = pfade
+    ? Math.round((perzentil / 100) * (pfade.anzahl - 1))
+    : 0;
+  const verteilung = useMemo(
+    () =>
+      pfade && letztes ? histogramm(pfade, real ? 100 * letztes.deflator : 100) : null,
+    [pfade, letztes, real],
+  );
+  // A bar click lands on a rank; two decimals map every rank of 10.000 paths
+  // back to itself.
+  const waehleRang = (rang: number) => {
+    if (!pfade) return;
+    setPerzentil(Math.round((rang / Math.max(pfade.anzahl - 1, 1)) * 10_000) / 100);
+  };
 
   const headline = (() => {
     if (incomplete) return { label: "Ergebnis", value: "—" };
@@ -531,7 +563,7 @@ export function MonteCarloRechner() {
               ) : null}
             </dl>
 
-            <CopyLinkButton scenarioKey={JSON.stringify([v, simulationen, seed, ansicht])} />
+            <CopyLinkButton scenarioKey={JSON.stringify([v, simulationen, seed, ansicht, perzentil])} />
           </div>
         )}
       </div>
@@ -544,12 +576,50 @@ export function MonteCarloRechner() {
             Das helle Band umfasst 90 % der Verläufe, das dunkle die mittlere Hälfte.
           </p>
           <FanChart jahre={result.jahre} real={real}
-            entnahmeAb={entnahme && v.ansparJahre > 0 ? v.ansparJahre : null} />
+            entnahmeAb={entnahme && v.ansparJahre > 0 ? v.ansparJahre : null}
+            pfad={detail?.salden ?? null}
+            pfadName={
+              perzentil <= 0 ? "Schlechtester Verlauf"
+                : perzentil >= 100 ? "Bester Verlauf"
+                  : `Verlauf am ${formatNumber(perzentil, perzentil % 1 === 0 ? 0 : 2)}. Perzentil`
+            } />
         </div>
       )}
 
+      {incomplete || !result || !verteilung || !letztes ? null : (
+        <div className={`card order-4 p-5 transition-opacity ${aktuell ? "" : "opacity-60"}`}>
+          <h2 className="font-medium">
+            Verteilung des Endkapitals nach {letztes.jahr} {letztes.jahr === 1 ? "Jahr" : "Jahren"}
+          </h2>
+          <p className="mb-4 mt-1 text-sm text-muted">
+            {real ? "In heutiger Kaufkraft. " : ""}
+            Jeder Balken ist der Anteil der Verläufe, die in diesem Bereich enden
+            {verteilung.leer > 0 ? "; der rote links die, deren Depot vorher leer war" : ""}.
+            Ein Klick wählt einen dieser Verläufe zum Ansehen aus.
+          </p>
+          <Verteilung histogramm={verteilung} anzahl={result.pfade.anzahl}
+            ausgewaehlterRang={ausgewaehlterRang} onWaehle={waehleRang} />
+        </div>
+      )}
+
+      {incomplete || !result || !detail ? null : (
+        <section
+          aria-labelledby="verlauf-titel"
+          className={`card order-5 p-5 transition-opacity ${aktuell ? "" : "opacity-60"}`}
+        >
+          <h2 id="verlauf-titel" className="font-medium">Einen Verlauf genauer ansehen</h2>
+          <p className="mb-4 mt-1 text-sm text-muted">
+            Alle Verläufe sind nach ihrem Ergebnis geordnet. Wähle einen aus, um zu
+            sehen, wie er zustande kam — er erscheint auch als Linie im Diagramm oben.
+          </p>
+          <VerlaufDetail detail={detail} jahre={result.jahre} real={real}
+            ansparJahre={v.ansparJahre} mitEntnahme={entnahme !== null}
+            anzahl={result.pfade.anzahl} perzentil={perzentil} onPerzentil={setPerzentil} />
+        </section>
+      )}
+
       {incomplete || !result ? null : (
-        <div className={`card table-scroll order-4 transition-opacity ${aktuell ? "" : "opacity-60"}`}>
+        <div className={`card table-scroll order-6 transition-opacity ${aktuell ? "" : "opacity-60"}`}>
           <table className="data-table w-full min-w-xl text-right text-sm tabular-nums">
             <caption className="border-b border-border bg-surface px-4 py-3 text-left font-medium">
               Verteilung Jahr für Jahr{real ? " (heutige Kaufkraft)" : ""}
@@ -590,7 +660,7 @@ export function MonteCarloRechner() {
       )}
 
       {incomplete ? null : (
-        <div className="card order-5 p-5 text-sm leading-relaxed text-muted">
+        <div className="card order-7 p-5 text-sm leading-relaxed text-muted">
           <h2 className="mb-2 font-medium text-foreground">Wie simuliert wird</h2>
           <ul className="flex list-disc flex-col gap-1.5 pl-5">
             <li>

@@ -5,6 +5,9 @@ import { berechneEntnahmeplan } from "@/lib/engine/finance/entnahmeplan";
 import {
   createNormal,
   createRng,
+  histogramm,
+  pfadAmPerzentil,
+  pfadDetail,
   simuliereMonteCarlo,
   type MonteCarloInput,
 } from "@/lib/engine/finance/monte-carlo";
@@ -198,5 +201,147 @@ describe("mit Volatilität", () => {
     expect(quote).toBeGreaterThan(0.4);
     expect(quote).toBeLessThan(0.98);
     expect(r.jahre[40].nochKapital).toBeCloseTo(quote, 10);
+  });
+});
+
+describe("einzelne Verläufe", () => {
+  it("keeps every path's year-end capital, consistent with the percentiles", () => {
+    const r = run({ simulationen: 501 });
+    const { pfade } = r;
+    expect(pfade.anzahl).toBe(501);
+    expect(pfade.jahre).toBe(20);
+    for (const jahr of [0, 7, 20]) {
+      const werte = Array.from({ length: 501 }, (_, i) => pfade.salden[i * 21 + jahr]).sort(
+        (a, b) => a - b,
+      );
+      // 501 paths: the median is exactly the 251st value.
+      expect(werte[250]).toBe(r.jahre[jahr].perzentile[50]);
+    }
+  });
+
+  it("ranks the paths from worst to best outcome", () => {
+    const { pfade } = run({ simulationen: 300 });
+    const ende = (i: number) => pfade.salden[i * 21 + 20];
+    expect(new Set(pfade.rangfolge).size).toBe(300);
+    for (let k = 1; k < 300; k++) {
+      expect(ende(pfade.rangfolge[k])).toBeGreaterThanOrEqual(ende(pfade.rangfolge[k - 1]));
+    }
+    expect(pfadAmPerzentil(pfade, 0)).toBe(pfade.rangfolge[0]);
+    expect(pfadAmPerzentil(pfade, 100)).toBe(pfade.rangfolge[299]);
+    expect(pfadAmPerzentil(pfade, 50)).toBe(pfade.rangfolge[150]);
+  });
+
+  it("ranks paths that ran dry earlier as worse", () => {
+    const { pfade } = run({
+      startkapital: euros(300_000),
+      sparrate: 0,
+      ansparJahre: 0,
+      volatilitaet: 25,
+      entnahme: euros(2_000),
+      entnahmeJahre: 30,
+      simulationen: 400,
+    });
+    const leer = Array.from(pfade.rangfolge)
+      .map((i) => pfade.erschoepft[i])
+      .filter((m) => m !== -1);
+    expect(leer.length).toBeGreaterThan(10);
+    expect(leer).toEqual([...leer].sort((a, b) => a - b));
+    // and the worst path is one of them
+    expect(pfade.erschoepft[pfade.rangfolge[0]]).toBe(leer[0]);
+  });
+
+  it("records the fund's yearly return, not the account's", () => {
+    // Ohne Sparrate ist die Kontoentwicklung die Fondsrendite, bis auf Centrundung.
+    const { pfade } = run({ sparrate: 0, simulationen: 50 });
+    const d = pfadDetail(pfade, 17);
+    expect(d.salden).toHaveLength(21);
+    expect(d.renditen).toHaveLength(20);
+    d.renditen.forEach((rendite, i) => {
+      expect(d.salden[i + 1] / d.salden[i] - 1).toBeCloseTo(rendite, 4);
+    });
+    const gesamt = d.salden[20] / d.salden[0];
+    expect(Math.pow(1 + d.renditeProJahr, 20)).toBeCloseTo(gesamt, 3);
+    expect(d.besteJahr!.rendite).toBe(Math.max(...d.renditen));
+    expect(d.schlechtesteJahr!.rendite).toBe(Math.min(...d.renditen));
+  });
+
+  it("measures the deepest fall from a previous high", () => {
+    const flach = pfadDetail(run({ volatilitaet: 0, simulationen: 1 }).pfade, 0);
+    expect(flach.maxDrawdown).toBe(0);
+    expect(flach.drawdownTiefJahr).toBeNull();
+    expect(flach.renditeProJahr).toBeCloseTo(0.07, 10);
+
+    const { pfade } = run({ volatilitaet: 20, simulationen: 200 });
+    for (let i = 0; i < 200; i++) {
+      const d = pfadDetail(pfade, i);
+      expect(d.maxDrawdown).toBeGreaterThanOrEqual(0);
+      expect(d.maxDrawdown).toBeLessThan(1);
+      // A whole losing year is a fall at least that deep.
+      expect(d.maxDrawdown).toBeGreaterThanOrEqual(-d.schlechtesteJahr!.rendite - 1e-12);
+    }
+  });
+
+  it("reports when a path ran dry", () => {
+    const d = pfadDetail(
+      run({
+        startkapital: euros(12_000),
+        sparrate: 0,
+        ansparJahre: 0,
+        rendite: 0,
+        volatilitaet: 0,
+        inflation: 0,
+        entnahme: euros(1_000),
+        entnahmeJahre: 3,
+        simulationen: 1,
+      }).pfade,
+      0,
+    );
+    expect(d.leerNachJahren).toBe(1);
+    expect(d.salden).toEqual([euros(12_000), 0, 0, 0]);
+  });
+});
+
+describe("Histogramm", () => {
+  it("puts every path in exactly one class, in ranking order", () => {
+    const { pfade } = run({ simulationen: 1_000 });
+    const h = histogramm(pfade, 100);
+    expect(h.leer).toBe(0);
+    expect(h.klassen.reduce((s, k) => s + k.anzahl, 0)).toBe(1_000);
+    let naechsterRang = 0;
+    for (const k of h.klassen) {
+      if (k.anzahl === 0) continue;
+      expect(k.rangVon).toBe(naechsterRang);
+      expect(k.rangBis - k.rangVon + 1).toBe(k.anzahl);
+      naechsterRang = k.rangBis + 1;
+    }
+    // round class widths
+    const breite = h.klassen[0].bis - h.klassen[0].von;
+    expect(Number((breite / Math.pow(10, Math.floor(Math.log10(breite)))).toFixed(6))).toSatisfy(
+      (x: number) => [1, 2, 2.5, 5].includes(x),
+    );
+    expect(h.klassen.length).toBeGreaterThan(15);
+    expect(h.klassen.length).toBeLessThan(45);
+  });
+
+  it("counts paths that ran dry separately, before every class", () => {
+    const { pfade } = run({
+      startkapital: euros(300_000),
+      sparrate: 0,
+      ansparJahre: 0,
+      volatilitaet: 25,
+      entnahme: euros(2_000),
+      entnahmeJahre: 30,
+      simulationen: 400,
+    });
+    const h = histogramm(pfade, 100);
+    const leer = Array.from(pfade.erschoepft).filter((m) => m !== -1).length;
+    expect(h.leer).toBe(leer);
+    expect(h.klassen.reduce((s, k) => s + k.anzahl, 0)).toBe(400 - leer);
+    expect(h.klassen.find((k) => k.anzahl > 0)!.rangVon).toBe(leer);
+  });
+
+  it("copes with every path ending in the same place", () => {
+    const h = histogramm(run({ volatilitaet: 0, simulationen: 20 }).pfade, 100);
+    expect(h.klassen.reduce((s, k) => s + k.anzahl, 0)).toBe(20);
   });
 });

@@ -21,6 +21,17 @@ export interface SimulationResponse {
 // being typed into.
 self.onmessage = (event: MessageEvent<SimulationRequest>) => {
   const { id, input } = event.data;
-  const response: SimulationResponse = { id, result: simuliereMonteCarlo(input) };
-  self.postMessage(response);
+  const result = simuliereMonteCarlo(input);
+  const response: SimulationResponse = { id, result };
+  // The per-path arrays run to several megabytes; hand them over instead of
+  // copying them.
+  const p = result.pfade;
+  self.postMessage(response, [
+    p.salden.buffer,
+    p.jahresRenditen.buffer,
+    p.maxDrawdown.buffer,
+    p.drawdownTief.buffer,
+    p.erschoepft.buffer,
+    p.rangfolge.buffer,
+  ]);
 };

@@ -21,21 +21,27 @@ interface FanChartProps {
   real: boolean;
   /** Year the Entnahmephase starts, marked with a line; null without one. */
   entnahmeAb: number | null;
+  /** One path's nominal year-end capital, drawn over the bands; null for none. */
+  pfad: number[] | null;
+  /** Legend name for that path, e.g. "Verlauf am 25. Perzentil". */
+  pfadName: string;
 }
 
 /**
  * The spread of outcomes year by year: 5–95 % and 25–75 % of the paths as
  * nested bands, the median as a line, and what was paid in for scale.
  *
- * Bands rather than sample paths: a handful of drawn paths invites reading
- * one of them as the forecast, while the bands say what the simulation
- * actually knows — how wide the range is, and how it widens with time.
+ * Bands rather than a spray of sample paths: a handful of drawn paths invites
+ * reading one of them as the forecast, while the bands say what the simulation
+ * actually knows. The one path drawn on top is the one the reader picked, and
+ * it is drawn straight rather than smoothed — its kinks are the bad years.
  */
-export default function FanChart({ jahre, real, entnahmeAb }: FanChartProps) {
+export default function FanChart({ jahre, real, entnahmeAb, pfad, pfadName }: FanChartProps) {
   const euro = (cents: number, deflator: number) =>
     (real ? cents / deflator : cents) / 100;
 
-  const data = jahre.map((j) => ({
+  const data = jahre.map((j, index) => ({
+    pfad: pfad ? euro(pfad[index] ?? 0, j.deflator) : null,
     jahr: j.jahr,
     aussen: [euro(j.perzentile[5], j.deflator), euro(j.perzentile[95], j.deflator)],
     innen: [euro(j.perzentile[25], j.deflator), euro(j.perzentile[75], j.deflator)],
@@ -147,6 +153,17 @@ export default function FanChart({ jahre, real, entnahmeAb }: FanChartProps) {
             dot={false}
             isAnimationActive={false}
           />
+          {pfad === null ? null : (
+            <Line
+              type="linear"
+              dataKey="pfad"
+              name={pfadName}
+              stroke="var(--foreground)"
+              strokeWidth={1.75}
+              dot={false}
+              isAnimationActive={false}
+            />
+          )}
         </ComposedChart>
       </ResponsiveContainer>
     </div>
