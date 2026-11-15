@@ -74,7 +74,7 @@ export const categories: Category[] = [
 export const tools: Tool[] = [
   {
     slug: "zinseszins-rechner",
-    related: ["etf-sparplan-nach-steuern", "entnahmeplan-rechner", "rendite-rechner"],
+    related: ["monte-carlo-simulation", "etf-sparplan-nach-steuern", "entnahmeplan-rechner"],
     category: "geldanlage",
     title: "Zinseszins- und Sparplanrechner",
     navTitle: "Zinseszinsrechner",
@@ -93,6 +93,30 @@ export const tools: Tool[] = [
       "Anlagedauer berechnen",
       "Zielkapital erreichen",
       "wie lange bis 100.000 Euro",
+    ],
+  },
+  {
+    slug: "monte-carlo-simulation",
+    related: ["zinseszins-rechner", "entnahmeplan-rechner", "fire-rechner"],
+    category: "geldanlage",
+    title: "Monte-Carlo-Simulation für ETFs",
+    navTitle: "Monte-Carlo-Simulation",
+    description:
+      "Simuliere Tausende mögliche Verläufe deines ETF-Depots statt einer einzigen Durchschnittsrendite — mit Bandbreite des Endkapitals, der Wahrscheinlichkeit, dein Ziel zu erreichen, und wie oft eine Entnahme bis zum Ende reicht.",
+    keywords: [
+      "Monte Carlo Simulation",
+      "Monte Carlo Rechner",
+      "Monte-Carlo-Simulation ETF",
+      "ETF Simulation",
+      "Depot Simulation",
+      "Volatilität",
+      "Wahrscheinlichkeit Vermögen",
+      "Sparplan Risiko",
+      "Renditeschwankung",
+      "Perzentile",
+      "Sequence of Returns",
+      "Entnahme Erfolgswahrscheinlichkeit",
+      "reicht mein Geld",
     ],
   },
   {
@@ -194,7 +218,7 @@ export const tools: Tool[] = [
   },
   {
     slug: "entnahmeplan-rechner",
-    related: ["fire-rechner", "zinseszins-rechner", "rendite-rechner"],
+    related: ["fire-rechner", "monte-carlo-simulation", "zinseszins-rechner"],
     category: "geldanlage",
     title: "Entnahmeplan-Rechner",
     navTitle: "Entnahmeplan",
