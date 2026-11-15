@@ -50,8 +50,18 @@ const MAX_SEED = 999_999;
 const SIMULATIONEN = ["1000", "5000", "10000"] as const;
 type Simulationen = (typeof SIMULATIONEN)[number];
 type Ansicht = "nominal" | "real";
+/** Which phases are simulated. */
+type Szenario = "anspar" | "beides" | "entnahme";
+const SZENARIEN: [Szenario, string, string][] = [
+  ["anspar", "Ansparen", "a"],
+  ["beides", "Ansparen + Entnahme", "ae"],
+  ["entnahme", "Nur Entnahme", "e"],
+];
 
-type Werte = Omit<MonteCarloInput, "simulationen" | "seed">;
+type Werte = Required<Omit<MonteCarloInput, "simulationen" | "seed">> & {
+  /** Capital at the start of a withdrawal-only scenario. */
+  depot: number;
+};
 
 const DEFAULTS: Werte = {
   startkapital: 10_000_00,
@@ -64,8 +74,14 @@ const DEFAULTS: Werte = {
   kosten: 0.2,
   inflation: 2,
   zielkapital: 500_000_00,
-  entnahme: 0,
+  // In today's money; about 4,7 % a year of the median depot after the
+  // default 25 years, so the default answer is neither "always" nor "never".
+  entnahme: 1_000_00,
   entnahmeJahre: 30,
+  // A mix of roughly half equities, half bonds.
+  entnahmeRendite: 5,
+  entnahmeVolatilitaet: 9,
+  depot: 300_000_00,
 };
 const DEFAULT_SIMULATIONEN: Simulationen = "5000";
 const DEFAULT_SEED = 1;
@@ -89,6 +105,9 @@ function fieldsFrom(w: Werte): Fields {
     zielkapital: formatMoneyInput(w.zielkapital),
     entnahme: formatMoneyInput(w.entnahme),
     entnahmeJahre: formatNumberInput(w.entnahmeJahre),
+    entnahmeRendite: formatNumberInput(w.entnahmeRendite),
+    entnahmeVolatilitaet: formatNumberInput(w.entnahmeVolatilitaet),
+    depot: formatMoneyInput(w.depot),
   };
 }
 
@@ -177,6 +196,37 @@ function useSimulation(input: MonteCarloInput | null) {
   };
 }
 
+/** A small radio group in the site's segmented style. */
+function Segmented<T extends string>({
+  id,
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  id: string;
+  label: string;
+  value: T;
+  onChange: (value: T) => void;
+  options: [T, string][];
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-sm font-medium" id={`${id}-label`}>{label}</span>
+      <div className="segmented" role="radiogroup" aria-labelledby={`${id}-label`}>
+        {options.map(([option, text]) => (
+          <label key={option} data-active={value === option} className="segmented-option">
+            <input type="radio" name={id} value={option}
+              checked={value === option} onChange={() => onChange(option)}
+              className="sr-only" />
+            {text}
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function MonteCarloRechner() {
   const [fields, setFields] = useState<Fields>(() => fieldsFrom(DEFAULTS));
   const [simulationen, setSimulationen] = useState<Simulationen>(DEFAULT_SIMULATIONEN);
@@ -184,6 +234,12 @@ export function MonteCarloRechner() {
   const [ansicht, setAnsicht] = useState<Ansicht>("nominal");
   // Which path the drill-down shows: 0 = worst outcome, 100 = best.
   const [perzentil, setPerzentil] = useState(50);
+  const [szenario, setSzenario] = useState<Szenario>("anspar");
+  // Whether the Entnahmephase has a return and volatility of its own.
+  const [eigenerMarkt, setEigenerMarkt] = useState(false);
+  const mitAnspar = szenario !== "entnahme";
+  const mitEntnahme = szenario !== "anspar";
+  const eigenerEntnahmeMarkt = szenario === "beides" && eigenerMarkt;
   const set = (k: keyof Fields) => (v: string) => setFields((c) => ({ ...c, [k]: v }));
 
   const parsed = useMemo(() => {
@@ -199,9 +255,11 @@ export function MonteCarloRechner() {
       zielkapital: parseMoney(fields.zielkapital),
       entnahme: parseMoney(fields.entnahme),
       entnahmeJahre: parseGermanNumber(fields.entnahmeJahre),
+      entnahmeRendite: parseGermanNumber(fields.entnahmeRendite),
+      entnahmeVolatilitaet: parseGermanNumber(fields.entnahmeVolatilitaet),
+      depot: parseMoney(fields.depot),
     };
 
-    const mitEntnahme = (p.entnahme ?? 0) > 0;
     const range: Record<keyof Fields, boolean> = {
       startkapital: outOfRange(p.startkapital, 0, MAX_MONEY),
       sparrate: outOfRange(p.sparrate, 0, MAX_MONEY),
@@ -212,33 +270,43 @@ export function MonteCarloRechner() {
       kosten: outOfRange(p.kosten, 0, 5),
       inflation: outOfRange(p.inflation, -5, 20),
       zielkapital: outOfRange(p.zielkapital, 0, MAX_MONEY),
-      entnahme: outOfRange(p.entnahme, 0, MAX_MONEY),
+      // A withdrawal phase without a withdrawal is not one.
+      entnahme: outOfRange(p.entnahme, 1_00, MAX_MONEY),
       entnahmeJahre:
         outOfRange(p.entnahmeJahre, 1, MAX_JAHRE) || notInteger(p.entnahmeJahre),
+      entnahmeRendite: outOfRange(p.entnahmeRendite, -20, 30),
+      entnahmeVolatilitaet: outOfRange(p.entnahmeVolatilitaet, 0, 60),
+      depot: outOfRange(p.depot, 1_00, MAX_MONEY),
     };
     // Both phases together are capped; the engine would otherwise cut the end off.
     const zuLang =
-      mitEntnahme &&
+      szenario === "beides" &&
       p.ansparJahre !== null &&
       p.entnahmeJahre !== null &&
       p.ansparJahre + p.entnahmeJahre > MAX_JAHRE_GESAMT;
 
-    // Something has to be simulated: at least one year of either phase.
-    const ohneZeitraum = p.ansparJahre === 0 && !mitEntnahme;
     const invalid = Object.fromEntries(
       (Object.keys(p) as (keyof Fields)[]).map((k) => [k, p[k] === null || range[k]]),
     ) as Record<keyof Fields, boolean>;
-    // The Entnahme-Dauer only matters with a withdrawal.
-    if (!mitEntnahme) invalid.entnahmeJahre = false;
+    // At least one year of saving; without one, "Nur Entnahme" is the scenario.
+    const ohneZeitraum = mitAnspar && p.ansparJahre === 0;
     if (ohneZeitraum) invalid.ansparJahre = true;
     if (zuLang) invalid.entnahmeJahre = true;
+    // Fields of a phase that is not simulated do not hold anything up.
+    const ungenutzt: (keyof Fields)[] = [
+      ...(mitAnspar ? [] : (["startkapital", "sparrate", "dynamik", "ansparJahre", "zielkapital"] as const)),
+      ...(mitEntnahme ? [] : (["entnahme", "entnahmeJahre"] as const)),
+      ...(eigenerEntnahmeMarkt ? [] : (["entnahmeRendite", "entnahmeVolatilitaet"] as const)),
+      ...(szenario === "entnahme" ? [] : (["depot"] as const)),
+    ];
+    for (const k of ungenutzt) invalid[k] = false;
 
     const values = Object.fromEntries(
       (Object.keys(p) as (keyof Fields)[]).map((k) => [k, p[k] ?? DEFAULTS[k]]),
     ) as Werte;
 
-    return { values, range, invalid, ohneZeitraum, zuLang, mitEntnahme };
-  }, [fields]);
+    return { values, range, invalid, ohneZeitraum, zuLang };
+  }, [fields, szenario, mitAnspar, mitEntnahme, eigenerEntnahmeMarkt]);
 
   const incomplete = Object.values(parsed.invalid).some(Boolean);
   const v = parsed.values;
@@ -256,12 +324,30 @@ export function MonteCarloRechner() {
           kosten: readNumber(p, "t", DEFAULTS.kosten, 0, 5),
           inflation: readNumber(p, "i", DEFAULTS.inflation, -5, 20),
           zielkapital: readMoney(p, "z", DEFAULTS.zielkapital, MAX_MONEY),
-          entnahme: readMoney(p, "e", DEFAULTS.entnahme, MAX_MONEY),
+          // Links from before the scenario switch wrote 0 for "no withdrawal".
+          entnahme: readMoney(p, "e", DEFAULTS.entnahme, MAX_MONEY) || DEFAULTS.entnahme,
           entnahmeJahre: Math.round(
             readNumber(p, "ej", DEFAULTS.entnahmeJahre, 1, MAX_JAHRE),
           ),
+          entnahmeRendite: readNumber(p, "er", DEFAULTS.entnahmeRendite, -20, 30),
+          entnahmeVolatilitaet: readNumber(p, "ev", DEFAULTS.entnahmeVolatilitaet, 0, 60),
+          depot: readMoney(p, "dk", DEFAULTS.depot, MAX_MONEY) || DEFAULTS.depot,
         }),
       );
+      const m = SZENARIEN.find(([, , kurz]) => kurz === p.get("m"));
+      if (m) {
+        setSzenario(m[0]);
+      } else if (Number(p.get("e")) > 0) {
+        // Before the switch, a withdrawal above 0 € meant both phases, or a
+        // withdrawal-only plan from the Startkapital with 0 years of saving.
+        if (p.get("j") === "0") {
+          setSzenario("entnahme");
+          setFields((f) => ({ ...f, depot: f.startkapital }));
+        } else {
+          setSzenario("beides");
+        }
+      }
+      setEigenerMarkt(p.get("em") === "1");
       const n = p.get("n");
       if (n !== null && (SIMULATIONEN as readonly string[]).includes(n)) {
         setSimulationen(n as Simulationen);
@@ -281,8 +367,17 @@ export function MonteCarloRechner() {
       p.set("t", numberParam(v.kosten));
       p.set("i", numberParam(v.inflation));
       p.set("z", moneyParam(v.zielkapital));
-      p.set("e", moneyParam(v.entnahme));
-      p.set("ej", numberParam(v.entnahmeJahre));
+      p.set("m", SZENARIEN.find(([s]) => s === szenario)![2]);
+      if (mitEntnahme) {
+        p.set("e", moneyParam(v.entnahme));
+        p.set("ej", numberParam(v.entnahmeJahre));
+      }
+      if (szenario === "entnahme") p.set("dk", moneyParam(v.depot));
+      if (eigenerEntnahmeMarkt) {
+        p.set("em", "1");
+        p.set("er", numberParam(v.entnahmeRendite));
+        p.set("ev", numberParam(v.entnahmeVolatilitaet));
+      }
       p.set("n", simulationen);
       p.set("seed", numberParam(seed));
       p.set("ans", ansicht);
@@ -290,21 +385,26 @@ export function MonteCarloRechner() {
       return p;
     },
     !incomplete,
-    JSON.stringify([v, simulationen, seed, ansicht, perzentil]),
+    JSON.stringify([v, szenario, eigenerMarkt, simulationen, seed, ansicht, perzentil]),
   );
 
-  const input: MonteCarloInput | null = useMemo(
-    () =>
-      incomplete
-        ? null
-        : {
-            ...v,
-            entnahme: parsed.mitEntnahme ? v.entnahme : 0,
-            simulationen: Number(simulationen),
-            seed,
-          },
-    [incomplete, v, parsed.mitEntnahme, simulationen, seed],
-  );
+  const input: MonteCarloInput | null = useMemo(() => {
+    if (incomplete) return null;
+    const { depot, ...werte } = v;
+    return {
+      ...werte,
+      ...(szenario === "entnahme"
+        ? { startkapital: depot, sparrate: 0, dynamik: 0, ansparJahre: 0, zielkapital: 0 }
+        : {}),
+      entnahme: mitEntnahme ? v.entnahme : 0,
+      entnahmeRendite: eigenerEntnahmeMarkt ? v.entnahmeRendite : v.rendite,
+      entnahmeVolatilitaet: eigenerEntnahmeMarkt ? v.entnahmeVolatilitaet : v.volatilitaet,
+      simulationen: Number(simulationen),
+      seed,
+    };
+  }, [incomplete, v, szenario, mitEntnahme, eigenerEntnahmeMarkt, simulationen, seed]);
+  // Years of saving actually simulated.
+  const ansparJahre = input?.ansparJahre ?? (mitAnspar ? v.ansparJahre : 0);
 
   const { result, aktuell } = useSimulation(input);
   const real = ansicht === "real";
@@ -346,7 +446,7 @@ export function MonteCarloRechner() {
       };
     }
     return {
-      label: `Median-Endkapital nach ${v.ansparJahre} ${v.ansparJahre === 1 ? "Jahr" : "Jahren"}`,
+      label: `Median-Endkapital nach ${ansparJahre} ${ansparJahre === 1 ? "Jahr" : "Jahren"}`,
       value: zeige(ende.perzentile[50], ende.deflator),
     };
   })();
@@ -357,39 +457,46 @@ export function MonteCarloRechner() {
         className="card calc-form order-2 flex flex-col gap-4 p-5"
         onSubmit={(e) => e.preventDefault()}
       >
-        <fieldset className="flex flex-col gap-3">
-          <legend className="pb-1 text-sm font-medium">Ansparphase</legend>
-          <NumberField id="startkapital" label="Startkapital" suffix="€"
-            value={fields.startkapital} onChange={set("startkapital")}
-            invalid={parsed.invalid.startkapital} error="Bitte eine Zahl eingeben." />
-          <NumberField id="sparrate" label="Monatliche Sparrate" suffix="€"
-            value={fields.sparrate} onChange={set("sparrate")}
-            invalid={parsed.invalid.sparrate} error="Bitte eine Zahl eingeben." />
-          <div className="grid grid-cols-2 gap-3">
-            <NumberField id="dynamik" label="Dynamik" suffix="% p. a."
-              value={fields.dynamik} onChange={set("dynamik")}
-              invalid={parsed.invalid.dynamik}
-              error={parsed.range.dynamik ? "Zwischen 0 und 20 %." : "Bitte eine Zahl eingeben."} />
-            <NumberField id="ansparJahre" label="Dauer" suffix="Jahre"
-              value={fields.ansparJahre} onChange={set("ansparJahre")}
-              invalid={parsed.invalid.ansparJahre}
-              error={
-                parsed.ohneZeitraum
-                  ? "Ohne Entnahme mindestens 1 Jahr."
-                  : parsed.range.ansparJahre
-                    ? `Ganze Zahl von 0 bis ${MAX_JAHRE}.`
-                    : "Bitte eine Zahl eingeben."
-              } />
-          </div>
-          <NumberField id="zielkapital" label="Zielkapital" suffix="€"
-            value={fields.zielkapital} onChange={set("zielkapital")}
-            invalid={parsed.invalid.zielkapital}
-            hint="Nominal am Ende der Ansparphase. 0 € = ohne Ziel."
-            error="Bitte eine Zahl eingeben." />
-        </fieldset>
+        <Segmented id="szenario" label="Was simulieren?" value={szenario} onChange={setSzenario}
+          options={SZENARIEN.map(([value, label]) => [value, label])} />
+
+        {mitAnspar ? (
+          <fieldset className="flex flex-col gap-3 border-t border-border pt-4">
+            <legend className="pr-2 text-sm font-medium">Ansparphase</legend>
+            <NumberField id="startkapital" label="Startkapital" suffix="€"
+              value={fields.startkapital} onChange={set("startkapital")}
+              invalid={parsed.invalid.startkapital} error="Bitte eine Zahl eingeben." />
+            <NumberField id="sparrate" label="Monatliche Sparrate" suffix="€"
+              value={fields.sparrate} onChange={set("sparrate")}
+              invalid={parsed.invalid.sparrate} error="Bitte eine Zahl eingeben." />
+            <div className="grid grid-cols-2 gap-3">
+              <NumberField id="dynamik" label="Dynamik" suffix="% p. a."
+                value={fields.dynamik} onChange={set("dynamik")}
+                invalid={parsed.invalid.dynamik}
+                error={parsed.range.dynamik ? "Zwischen 0 und 20 %." : "Bitte eine Zahl eingeben."} />
+              <NumberField id="ansparJahre" label="Dauer" suffix="Jahre"
+                value={fields.ansparJahre} onChange={set("ansparJahre")}
+                invalid={parsed.invalid.ansparJahre}
+                error={
+                  parsed.ohneZeitraum
+                    ? "Mindestens 1 Jahr."
+                    : parsed.range.ansparJahre
+                      ? `Ganze Zahl von 1 bis ${MAX_JAHRE}.`
+                      : "Bitte eine Zahl eingeben."
+                } />
+            </div>
+            <NumberField id="zielkapital" label="Zielkapital" suffix="€"
+              value={fields.zielkapital} onChange={set("zielkapital")}
+              invalid={parsed.invalid.zielkapital}
+              hint="Nominal am Ende der Ansparphase. 0 € = ohne Ziel."
+              error="Bitte eine Zahl eingeben." />
+          </fieldset>
+        ) : null}
 
         <fieldset className="flex flex-col gap-3 border-t border-border pt-4">
-          <legend className="pr-2 text-sm font-medium">Markt und Kosten</legend>
+          <legend className="pr-2 text-sm font-medium">
+            {eigenerEntnahmeMarkt ? "Markt beim Ansparen und Kosten" : "Markt und Kosten"}
+          </legend>
           <div className="grid grid-cols-2 gap-3">
             <NumberField id="rendite" label="Rendite" suffix="% p. a."
               value={fields.rendite} onChange={set("rendite")}
@@ -417,14 +524,24 @@ export function MonteCarloRechner() {
           </div>
         </fieldset>
 
-        <fieldset className="flex flex-col gap-3 border-t border-border pt-4">
-          <legend className="pr-2 text-sm font-medium">Entnahmephase</legend>
-          <NumberField id="entnahme" label="Monatliche Entnahme" suffix="€"
-            value={fields.entnahme} onChange={set("entnahme")}
-            invalid={parsed.invalid.entnahme}
-            hint="In heutiger Kaufkraft, steigt jedes Jahr mit der Inflation. 0 € = ohne Entnahmephase."
-            error="Bitte eine Zahl eingeben." />
-          {parsed.mitEntnahme ? (
+        {mitEntnahme ? (
+          <fieldset className="flex flex-col gap-3 border-t border-border pt-4">
+            <legend className="pr-2 text-sm font-medium">Entnahmephase</legend>
+            {szenario === "entnahme" ? (
+              <NumberField id="depot" label="Depot zu Beginn" suffix="€"
+                value={fields.depot} onChange={set("depot")}
+                invalid={parsed.invalid.depot}
+                error={parsed.range.depot ? "Mindestens 1 €." : "Bitte eine Zahl eingeben."} />
+            ) : null}
+            <NumberField id="entnahme" label="Monatliche Entnahme" suffix="€"
+              value={fields.entnahme} onChange={set("entnahme")}
+              invalid={parsed.invalid.entnahme}
+              hint={
+                szenario === "beides"
+                  ? "In heutiger Kaufkraft, steigt jedes Jahr mit der Inflation — auch schon während der Ansparphase."
+                  : "Steigt jedes Jahr mit der Inflation."
+              }
+              error={parsed.range.entnahme ? "Mindestens 1 €." : "Bitte eine Zahl eingeben."} />
             <NumberField id="entnahmeJahre" label="Entnahme über" suffix="Jahre"
               value={fields.entnahmeJahre} onChange={set("entnahmeJahre")}
               invalid={parsed.invalid.entnahmeJahre}
@@ -435,8 +552,38 @@ export function MonteCarloRechner() {
                     ? `Ganze Zahl von 1 bis ${MAX_JAHRE}.`
                     : "Bitte eine Zahl eingeben."
               } />
-          ) : null}
-        </fieldset>
+            {szenario === "beides" ? (
+              <>
+                <Segmented id="entnahme-markt" label="Anlage in der Entnahme"
+                  value={eigenerMarkt ? "eigen" : "gleich"}
+                  onChange={(m) => setEigenerMarkt(m === "eigen")}
+                  options={[
+                    ["gleich", "Wie beim Ansparen"],
+                    ["eigen", "Defensiver"],
+                  ]} />
+                {eigenerMarkt ? (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <NumberField id="entnahmeRendite" label="Rendite" suffix="% p. a."
+                        value={fields.entnahmeRendite} onChange={set("entnahmeRendite")}
+                        invalid={parsed.invalid.entnahmeRendite}
+                        error={parsed.range.entnahmeRendite ? "Zwischen -20 und 30 %." : "Bitte eine Zahl eingeben."} />
+                      <NumberField id="entnahmeVolatilitaet" label="Volatilität" suffix="% p. a."
+                        value={fields.entnahmeVolatilitaet} onChange={set("entnahmeVolatilitaet")}
+                        invalid={parsed.invalid.entnahmeVolatilitaet}
+                        error={parsed.range.entnahmeVolatilitaet ? "Zwischen 0 und 60 %." : "Bitte eine Zahl eingeben."} />
+                    </div>
+                    <p className="-mt-1 text-xs leading-relaxed text-muted">
+                      Ab dem ersten Entnahmejahr, etwa für einen Mix aus Aktien und
+                      Anleihen: halb und halb wird oft mit 4 bis 5 % und 8 bis 10 %
+                      Schwankung angesetzt. Kosten und Inflation wie oben.
+                    </p>
+                  </>
+                ) : null}
+              </>
+            ) : null}
+          </fieldset>
+        ) : null}
 
         <fieldset className="flex flex-col gap-3 border-t border-border pt-4">
           <legend className="pr-2 text-sm font-medium">Simulation</legend>
@@ -447,24 +594,11 @@ export function MonteCarloRechner() {
               label: formatNumber(Number(n), 0),
             }))}
             hint="Mehr Verläufe glätten die Ränder, rechnen aber länger." />
-          <div className="flex flex-col gap-2">
-            <span className="text-sm font-medium" id="ansicht-label">Beträge</span>
-            <div className="segmented" role="radiogroup" aria-labelledby="ansicht-label">
-              {(
-                [
-                  ["nominal", "Nominal"],
-                  ["real", "Heutige Kaufkraft"],
-                ] as const
-              ).map(([value, label]) => (
-                <label key={value} data-active={ansicht === value} className="segmented-option">
-                  <input type="radio" name="ansicht" value={value}
-                    checked={ansicht === value} onChange={() => setAnsicht(value)}
-                    className="sr-only" />
-                  {label}
-                </label>
-              ))}
-            </div>
-          </div>
+          <Segmented id="ansicht" label="Beträge" value={ansicht} onChange={setAnsicht}
+            options={[
+              ["nominal", "Nominal"],
+              ["real", "Heutige Kaufkraft"],
+            ]} />
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs text-muted">
               Zufallsfolge Nr. {formatNumber(seed, 0)} — derselbe Link zeigt dieselben Verläufe.
@@ -492,10 +626,14 @@ export function MonteCarloRechner() {
             <p className="mt-1 max-w-2xl text-sm text-muted">
               {entnahme
                 ? `${formatEuroWhole(v.entnahme)} im Monat in heutiger Kaufkraft — ${
-                    v.ansparJahre > 0
-                      ? `das sind nach ${v.ansparJahre} Jahren Ansparen anfangs ${formatEuroWhole(entnahme.ersteEntnahme)}, `
+                    ansparJahre > 0
+                      ? `das sind nach ${ansparJahre} Jahren Ansparen anfangs ${formatEuroWhole(entnahme.ersteEntnahme)}, `
                       : ""
-                  }jedes Jahr um ${formatPercent(v.inflation, 1)} erhöht. ${
+                  }jedes Jahr um ${formatPercent(v.inflation, 1)} erhöht${
+                    eigenerEntnahmeMarkt
+                      ? `, ab Rentenbeginn angelegt mit ${formatPercent(v.entnahmeRendite, 1)} Rendite und ${formatPercent(v.entnahmeVolatilitaet, 1)} Schwankung`
+                      : ""
+                  }. ${
                     entnahme.erschoepftP10Jahre === null
                       ? "Auch in den ungünstigsten zehn Prozent der Verläufe bleibt bis zum Ende Kapital übrig."
                       : `Im ungünstigsten Zehntel der Verläufe ist das Depot ${nachJahren(entnahme.erschoepftP10Jahre)} leer.`
@@ -507,7 +645,7 @@ export function MonteCarloRechner() {
             </p>
 
             <dl className="mt-5 grid gap-4 grid-cols-[repeat(auto-fit,minmax(min(100%,10rem),1fr))]">
-              {v.ansparJahre > 0 ? (
+              {ansparJahre > 0 ? (
                 <>
                   <div>
                     <dt className="text-sm text-muted">Ungünstig (10 %)</dt>
@@ -536,7 +674,7 @@ export function MonteCarloRechner() {
                   </div>
                 </>
               ) : null}
-              {ende.zielQuote === null || v.ansparJahre === 0 ? null : (
+              {ende.zielQuote === null || ansparJahre === 0 ? null : (
                 <div>
                   <dt className="text-sm text-muted">Ziel erreicht</dt>
                   <dd className="text-lg font-medium tabular-nums">{quote(ende.zielQuote)}</dd>
@@ -545,7 +683,7 @@ export function MonteCarloRechner() {
                   </p>
                 </div>
               )}
-              {v.ansparJahre === 0 ? null : (
+              {ansparJahre === 0 ? null : (
                 <div>
                   <dt className="text-sm text-muted">Weniger als eingezahlt</dt>
                   <dd className="text-lg font-medium tabular-nums">{quote(ende.verlustQuote)}</dd>
@@ -576,7 +714,7 @@ export function MonteCarloRechner() {
             Das helle Band umfasst 90 % der Verläufe, das dunkle die mittlere Hälfte.
           </p>
           <FanChart jahre={result.jahre} real={real}
-            entnahmeAb={entnahme && v.ansparJahre > 0 ? v.ansparJahre : null}
+            entnahmeAb={entnahme && ansparJahre > 0 ? ansparJahre : null}
             pfad={detail?.salden ?? null}
             pfadName={
               perzentil <= 0 ? "Schlechtester Verlauf"
@@ -613,7 +751,7 @@ export function MonteCarloRechner() {
             sehen, wie er zustande kam — er erscheint auch als Linie im Diagramm oben.
           </p>
           <VerlaufDetail detail={detail} jahre={result.jahre} real={real}
-            ansparJahre={v.ansparJahre} mitEntnahme={entnahme !== null}
+            ansparJahre={ansparJahre} mitEntnahme={entnahme !== null}
             anzahl={result.pfade.anzahl} perzentil={perzentil} onPerzentil={setPerzentil} />
         </section>
       )}
@@ -641,7 +779,7 @@ export function MonteCarloRechner() {
                 <tr key={j.jahr} className="border-t border-border">
                   <th scope="row" className="px-4 py-2 text-left font-normal">
                     {j.jahr}
-                    {entnahme && j.phase === "entnahme" && j.jahr === v.ansparJahre + 1 ? (
+                    {entnahme && j.phase === "entnahme" && j.jahr === ansparJahre + 1 ? (
                       <span className="ml-2 text-xs text-muted">Entnahme</span>
                     ) : null}
                   </th>
@@ -695,6 +833,13 @@ export function MonteCarloRechner() {
               : erst die Monatsrendite, dann die Auszahlung. Gerade hier zählt die
               Reihenfolge — schlechte Jahre am Anfang der Entnahme wiegen schwerer als
               am Ende, auch wenn die Durchschnittsrendite gleich ist.
+            </li>
+            <li>
+              Mit einer defensiveren Anlage in der Entnahme wechselt jeder Verlauf zu
+              Rentenbeginn auf die neue Rendite und Schwankung. Er behält dabei seine
+              Zufallsfolge: Ein schlechtes Jahr bleibt ein schlechtes Jahr, fällt aber
+              milder aus. So zeigt der Vergleich mit „Wie beim Ansparen“ allein den
+              Effekt der Umschichtung.
             </li>
             <li>
               Die Zufallsfolge steht im Link, damit ein geteiltes Szenario dieselben

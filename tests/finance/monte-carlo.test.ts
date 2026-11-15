@@ -204,6 +204,76 @@ describe("mit Volatilität", () => {
   });
 });
 
+describe("eigener Markt in der Entnahme", () => {
+  const mitEntnahme = { entnahme: euros(1_500), entnahmeJahre: 30 };
+
+  it("changes nothing when given the same values", () => {
+    const ohne = run(mitEntnahme);
+    const gleich = run({ ...mitEntnahme, entnahmeRendite: 7, entnahmeVolatilitaet: 15 });
+    expect(gleich.jahre).toEqual(ohne.jahre);
+    expect(gleich.entnahme).toEqual(ohne.entnahme);
+  });
+
+  it("continues as the Entnahmeplan-Rechner at the withdrawal phase's return", () => {
+    const r = run({
+      ...mitEntnahme,
+      volatilitaet: 0,
+      entnahmeRendite: 3,
+      entnahmeVolatilitaet: 0,
+      simulationen: 1,
+    });
+    const sparplan = calculateSparplan({
+      startCapital: base.startkapital,
+      monthlyContribution: base.sparrate,
+      annualReturn: 7,
+      years: base.ansparJahre,
+      timing: "end",
+      annualInflation: 0,
+      contributionIncrease: 0,
+    });
+    expect(r.ansparEnde.perzentile[50]).toBe(sparplan.finalBalance);
+    const plan = berechneEntnahmeplan({
+      startkapital: sparplan.finalBalance,
+      monatlicheEntnahme: r.entnahme!.ersteEntnahme,
+      rendite: 3,
+      inflation: 2,
+      jahre: 30,
+    });
+    for (const zeile of plan.jahre) {
+      expect(r.jahre[base.ansparJahre + zeile.jahr].perzentile[50]).toBe(zeile.endkapital);
+    }
+  });
+
+  it("leaves the Ansparphase untouched and gives each path the same shocks", () => {
+    const aktien = run(mitEntnahme);
+    const defensiv = run({ ...mitEntnahme, entnahmeRendite: 4, entnahmeVolatilitaet: 6 });
+    expect(defensiv.ansparEnde).toEqual(aktien.ansparEnde);
+    expect(defensiv.jahre.slice(0, base.ansparJahre + 1)).toEqual(
+      aktien.jahre.slice(0, base.ansparJahre + 1),
+    );
+    // Same shock, smaller swing: a path's first withdrawal year moves in the
+    // same direction around its own median, but less far.
+    const jahre = defensiv.pfade.jahre;
+    for (let pfad = 0; pfad < 50; pfad++) {
+      const a = Math.log(1 + aktien.pfade.jahresRenditen[pfad * jahre + base.ansparJahre]);
+      const d = Math.log(1 + defensiv.pfade.jahresRenditen[pfad * jahre + base.ansparJahre]);
+      const za = (a - Math.log(1.07)) / 0.15;
+      const zd = (d - Math.log(1.04)) / 0.06;
+      expect(zd).toBeCloseTo(za, 6);
+    }
+  });
+
+  it("narrows the spread of outcomes in retirement", () => {
+    const aktien = run(mitEntnahme);
+    const defensiv = run({ ...mitEntnahme, entnahmeRendite: 7, entnahmeVolatilitaet: 5 });
+    const breite = (r: typeof aktien) => {
+      const j = r.jahre[base.ansparJahre + 10].perzentile;
+      return j[90] - j[10];
+    };
+    expect(breite(defensiv)).toBeLessThan(breite(aktien));
+  });
+});
+
 describe("einzelne Verläufe", () => {
   it("keeps every path's year-end capital, consistent with the percentiles", () => {
     const r = run({ simulationen: 501 });

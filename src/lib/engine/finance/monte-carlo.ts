@@ -38,6 +38,13 @@ export interface MonteCarloInput {
   entnahme: Money;
   /** Whole years of withdrawing. Ignored without a withdrawal. */
   entnahmeJahre: number;
+  /**
+   * Median return before costs once withdrawals start — typically lower, for
+   * a more defensive mix in retirement. Defaults to `rendite`.
+   */
+  entnahmeRendite?: Percent;
+  /** Volatility once withdrawals start. Defaults to `volatilitaet`. */
+  entnahmeVolatilitaet?: Percent;
   /** Number of simulated paths. */
   simulationen: number;
   /** Seed of the random generator: the same seed gives the same paths. */
@@ -228,6 +235,9 @@ function perzentileVon(werte: Float64Array): Perzentile {
  * capital below zero (Entnahmeplan-Rechner). The withdrawal is entered in
  * today's money, so its first nominal amount is already indexed over the
  * Ansparphase.
+ *
+ * The Entnahmephase may have a return and volatility of its own — the switch
+ * to a more defensive mix at retirement. Costs and inflation stay the same.
  */
 export function simuliereMonteCarlo(input: MonteCarloInput): MonteCarloResult {
   const n = Math.max(1, Math.floor(input.simulationen));
@@ -238,14 +248,19 @@ export function simuliereMonteCarlo(input: MonteCarloInput): MonteCarloResult {
 
   const inflation = toDecimal(input.inflation);
   const dynamik = toDecimal(input.dynamik);
-  const sigma = toDecimal(input.volatilitaet);
 
   // Median monthly factor exp(mu): ((1 + r)(1 - TER))^(1/12).
-  const mu =
-    (Math.log(1 + toDecimal(input.rendite)) + Math.log(1 - toDecimal(input.kosten))) / 12;
-  const sigmaMonat = sigma / Math.sqrt(12);
-  const deterministisch = sigmaMonat === 0;
-  const festerZins = Math.exp(mu) - 1;
+  const markt = (rendite: Percent, volatilitaet: Percent) => {
+    const mu = (Math.log(1 + toDecimal(rendite)) + Math.log(1 - toDecimal(input.kosten))) / 12;
+    const sigmaMonat = toDecimal(volatilitaet) / Math.sqrt(12);
+    return { mu, sigmaMonat, festerZins: Math.exp(mu) - 1 };
+  };
+  const marktAnspar = markt(input.rendite, input.volatilitaet);
+  const marktEntnahme = markt(
+    input.entnahmeRendite ?? input.rendite,
+    input.entnahmeVolatilitaet ?? input.volatilitaet,
+  );
+  const zufaellig = marktAnspar.sigmaMonat > 0 || marktEntnahme.sigmaMonat > 0;
 
   const uniform = createRng(input.seed);
   // Per-path monthly growth factor minus one, drawn for all paths at once.
@@ -314,13 +329,16 @@ export function simuliereMonteCarlo(input: MonteCarloInput): MonteCarloResult {
   for (let jahr = 1; jahr <= gesamtJahre; jahr++) {
     const anspar = jahr <= ansparJahre;
     const entnahmeJahr = jahr - ansparJahre - 1; // 0-based within the phase
+    const { mu, sigmaMonat, festerZins } = anspar ? marktAnspar : marktEntnahme;
     jahresFaktor.fill(1);
 
     for (let m = 0; m < 12; m++) {
       const monat = (jahr - 1) * 12 + m + 1;
       // Drawn for every path every month, even an empty one, so a path's
-      // randomness does not depend on what happened to the others.
-      if (deterministisch) {
+      // randomness does not depend on what happened to the others — and drawn
+      // the same way in both phases, so changing the retirement mix changes
+      // only what the same shocks do, not which shocks a path gets.
+      if (!zufaellig) {
         zinsen.fill(festerZins);
       } else {
         fillNormal(zinsen, uniform);
